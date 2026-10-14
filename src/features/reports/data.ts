@@ -1,0 +1,165 @@
+import type { Report, ReportTypeCard, PerformanceDataPoint, ChannelPerformance } from './types';
+
+export const reportTypeCards: ReportTypeCard[] = [
+  {
+    id: 'Campaign Performance',
+    title: 'Campaign Performance',
+    description: 'Analyze campaign performance across all channels.',
+    icon: 'BarChart2',
+    color: 'purple',
+  },
+  {
+    id: 'Financial Summary',
+    title: 'Financial Summary',
+    description: 'Review revenue, costs and profitability metrics.',
+    icon: 'Database',
+    color: 'teal',
+  },
+  {
+    id: 'Lead Conversion',
+    title: 'Lead Conversion',
+    description: 'Track leads and conversion performance.',
+    icon: 'Users',
+    color: 'purple',
+  },
+  {
+    id: 'Project Overview',
+    title: 'Project Overview',
+    description: 'Monitor project progress and key results.',
+    icon: 'Folder',
+    color: 'blue',
+  },
+  {
+    id: 'Custom Report',
+    title: 'Custom Report',
+    description: 'Create a custom report with your selected metrics.',
+    icon: 'FileText',
+    color: 'purple',
+  },
+];
+
+const autumnLaunchPerformanceData: PerformanceDataPoint[] = [
+  { date: '01 Oct 2026', leads: 12 },
+  { date: '03 Oct 2026', leads: 15 },
+  { date: '05 Oct 2026', leads: 18 },
+  { date: '07 Oct 2026', leads: 14 },
+  { date: '09 Oct 2026', leads: 20 },
+  { date: '11 Oct 2026', leads: 16 },
+  { date: '13 Oct 2026', leads: 22 },
+  { date: '15 Oct 2026', leads: 22 },
+  { date: '17 Oct 2026', leads: 19 },
+  { date: '19 Oct 2026', leads: 25 },
+  { date: '21 Oct 2026', leads: 21 },
+  { date: '23 Oct 2026', leads: 18 },
+  { date: '25 Oct 2026', leads: 24 },
+  { date: '27 Oct 2026', leads: 20 },
+  { date: '29 Oct 2026', leads: 26 },
+  { date: '31 Oct 2026', leads: 23 },
+];
+
+const autumnLaunchChannelPerformance: ChannelPerformance[] = [
+  { channel: 'Meta Ads', value: 2400 },
+  { channel: 'Email', value: 1200 },
+  { channel: 'Search', value: 1200 },
+  { channel: 'Organic', value: 600 },
+];
+
+const autumnLaunchKeyTakeaways = [
+  'Generated 180 leads, 33.3% conversion rate across all channels.',
+  'Total revenue of 13,400 MAD, with 2.48+ ROAS.',
+  'Campaign delivered +2,200 MAD estimated profit with 16.4% margin.',
+  'Strongest performance from Meta Ads (44.0% of revenue)',
+];
+
+export const initialReports: Report[] = [
+  {
+    id: 'report-1',
+    name: 'Autumn Launch 2026 — Performance Report',
+    type: 'Campaign Performance',
+    company: 'Atlas Retail SARL',
+    workspaceId: 'ws-atlas-retail',
+    reportingPeriod: '01 Oct 2026 – 31 Oct 2026',
+    createdBy: 'Sara El Amrani',
+    createdDate: '02 Nov 2026',
+    status: 'Ready',
+    campaign: 'Autumn Launch 2026',
+    metrics: {
+      adSpend: 5400,
+      leads: 180,
+      revenue: 13400,
+      estimatedProfit: 2200,
+      costOfGoods: 4600,
+      otherCosts: 1200,
+    },
+    performanceData: autumnLaunchPerformanceData,
+    channelPerformance: autumnLaunchChannelPerformance,
+    keyTakeaways: autumnLaunchKeyTakeaways,
+  },
+  {
+    id: 'report-2',
+    name: 'Q3 2026 — Financial Summary',
+    type: 'Financial Summary',
+    company: 'Atlas Retail SARL',
+    workspaceId: 'ws-atlas-retail',
+    reportingPeriod: '01 Jul 2026 – 30 Sep 2026',
+    createdBy: 'Omar Benali',
+    createdDate: '15 Oct 2026',
+    status: 'In Review',
+    metrics: {
+      adSpend: 12500,
+      leads: 320,
+      revenue: 28500,
+      estimatedProfit: 4800,
+      costOfGoods: 9200,
+      otherCosts: 2000,
+    },
+  },
+  {
+    id: 'report-3',
+    name: 'Lead Conversion Report — October 2026',
+    type: 'Lead Conversion',
+    company: 'Atlas Retail SARL',
+    workspaceId: 'ws-atlas-retail',
+    reportingPeriod: '01 Oct 2026 – 31 Oct 2026',
+    createdBy: 'Sara El Amrani',
+    createdDate: '01 Nov 2026',
+    status: 'Ready',
+    metrics: {
+      adSpend: 5400,
+      leads: 180,
+      revenue: 13400,
+      estimatedProfit: 2200,
+    },
+  },
+  {
+    id: 'report-4',
+    name: 'New Product Launch — Project Overview',
+    type: 'Project Overview',
+    company: 'Atlas Retail SARL',
+    workspaceId: 'ws-atlas-retail',
+    reportingPeriod: '01 Sep 2026 – 31 Oct 2026',
+    createdBy: 'Yassine Kettani',
+    createdDate: '28 Oct 2026',
+    status: 'Draft',
+    project: 'New Product Launch',
+  },
+  {
+    id: 'report-5',
+    name: 'H1 2026 — Marketing Overview',
+    type: 'Custom Report',
+    company: 'Atlas Retail SARL',
+    workspaceId: 'ws-atlas-retail',
+    reportingPeriod: '01 Jan 2026 – 30 Jun 2026',
+    createdBy: 'Sara El Amrani',
+    createdDate: '10 Jul 2026',
+    status: 'Archived',
+    metrics: {
+      adSpend: 32000,
+      leads: 890,
+      revenue: 78000,
+      estimatedProfit: 12000,
+    },
+  },
+];
+
+export const REPORTS_STORAGE_KEY = 'marketflow_reports';
