@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { X, FileText, Download, TrendingUp, DollarSign, Users, Wallet } from 'lucide-react';
 import { StatusBadge } from '../../../components/ui/StatusBadge';
 import type { Report } from '../types';
@@ -11,6 +11,17 @@ interface ReportDetailsModalProps {
 }
 
 export const ReportDetailsModal: React.FC<ReportDetailsModalProps> = ({ isOpen, onClose, report }) => {
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !report) return null;
 
   const handleExportPDF = () => {
@@ -26,7 +37,7 @@ export const ReportDetailsModal: React.FC<ReportDetailsModalProps> = ({ isOpen, 
   const hasTakeaways = report.keyTakeaways && report.keyTakeaways.length > 0;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="report-details-modal-title" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-4xl shadow-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-[#E2E8F0] sticky top-0 bg-white z-10">
           <div>

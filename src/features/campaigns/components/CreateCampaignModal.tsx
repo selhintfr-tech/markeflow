@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import type { CampaignItem, CampaignPlatform, CampaignStatus } from '../types';
+import type { CampaignItem, CampaignStatus, CampaignPlatform } from '../types';
+import { useWorkspace } from '../../../context/WorkspaceContext';
 
 interface CreateCampaignModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (campaignData: Partial<CampaignItem>) => void;
   initialCampaign?: CampaignItem | null;
-  workspaceName: string;
+  workspaceName?: string;
 }
 
 export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
@@ -15,54 +16,76 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
   onClose,
   onSave,
   initialCampaign,
-  workspaceName,
+  workspaceName: propWorkspaceName,
 }) => {
+  const { currentWorkspace } = useWorkspace();
+  const defaultWsName = propWorkspaceName || currentWorkspace?.name || 'Atlas Retail SARL';
+
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [workspaceName, setWorkspaceName] = useState(defaultWsName);
   const [projectName, setProjectName] = useState('Autumn Sales Growth');
   const [platform, setPlatform] = useState<CampaignPlatform>('Meta Ads');
   const [startDate, setStartDate] = useState('01 Nov 2026');
   const [endDate, setEndDate] = useState('30 Nov 2026');
-  const [adBudget, setAdBudget] = useState('5000');
-  const [status, setStatus] = useState<CampaignStatus>('Active');
+  const [adBudget, setAdBudget] = useState('2000');
+  const [status, setStatus] = useState<CampaignStatus>('Planned');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  useEffect(() => {
+  // Sync state during render when initialCampaign or isOpen changes (avoids cascading effect renders)
+  const [prevCampaign, setPrevCampaign] = useState(initialCampaign);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+
+  if (isOpen !== prevIsOpen || initialCampaign !== prevCampaign) {
+    setPrevIsOpen(isOpen);
+    setPrevCampaign(initialCampaign);
     if (initialCampaign) {
       setName(initialCampaign.name);
       setDescription(initialCampaign.description || '');
+      setWorkspaceName(initialCampaign.workspaceName);
       setProjectName(initialCampaign.projectName || 'Autumn Sales Growth');
       setPlatform(initialCampaign.platform);
       setStartDate(initialCampaign.startDate);
       setEndDate(initialCampaign.endDate);
-      setAdBudget(initialCampaign.adBudget.toString());
+      setAdBudget(initialCampaign.adBudget ? initialCampaign.adBudget.toString() : '2000');
       setStatus(initialCampaign.status);
     } else {
       setName('');
       setDescription('');
+      setWorkspaceName(currentWorkspace.name);
       setProjectName('Autumn Sales Growth');
       setPlatform('Meta Ads');
       setStartDate('01 Nov 2026');
       setEndDate('30 Nov 2026');
-      setAdBudget('5000');
-      setStatus('Active');
+      setAdBudget('2000');
+      setStatus('Planned');
     }
     setErrors({});
-  }, [initialCampaign, isOpen]);
+  }
+
+  // Handle ESC key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   const validate = () => {
-    const errs: { [key: string]: string } = {};
-    if (!name.trim()) errs.name = 'Campaign name is required';
-    if (!startDate.trim()) errs.startDate = 'Start date is required';
-    if (!endDate.trim()) errs.endDate = 'End date is required';
-    const parsedBudget = parseFloat(adBudget);
-    if (isNaN(parsedBudget) || parsedBudget < 0) {
-      errs.adBudget = 'Budget must be a non-negative number';
+    const newErrors: { [key: string]: string } = {};
+    if (!name.trim()) {
+      newErrors.name = 'Campaign name is required';
     }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
+    if (!adBudget || parseFloat(adBudget) <= 0) {
+      newErrors.adBudget = 'Please enter a valid budget';
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -88,16 +111,22 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-campaign-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"
+    >
       <div className="bg-white rounded-xl shadow-xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="px-5 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
-          <h3 className="text-base font-bold text-[#1E1B4B]">
+          <h3 id="create-campaign-modal-title" className="text-base font-bold text-[#1E1B4B]">
             {initialCampaign ? 'Edit Campaign' : 'Create New Campaign'}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+            className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
+            aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>
@@ -105,10 +134,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
           <div>
-            <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+            <label htmlFor="create-campaign-name-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
               Campaign Name <span className="text-red-500">*</span>
             </label>
             <input
+              id="create-campaign-name-input"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -123,10 +153,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+            <label htmlFor="create-campaign-desc-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
               Description
             </label>
             <textarea
+              id="create-campaign-desc-input"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
@@ -137,10 +168,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-project-select" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Related Project
               </label>
               <select
+                id="create-campaign-project-select"
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 className="w-full px-2.5 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
@@ -153,10 +185,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-platform-select" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Platform / Channel
               </label>
               <select
+                id="create-campaign-platform-select"
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as CampaignPlatform)}
                 className="w-full px-2.5 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
@@ -172,10 +205,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-start-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Start Date <span className="text-red-500">*</span>
               </label>
               <input
+                id="create-campaign-start-input"
                 type="text"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
@@ -185,10 +219,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-end-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 End Date <span className="text-red-500">*</span>
               </label>
               <input
+                id="create-campaign-end-input"
                 type="text"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
@@ -200,10 +235,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-budget-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Planned Budget (MAD) <span className="text-red-500">*</span>
               </label>
               <input
+                id="create-campaign-budget-input"
                 type="number"
                 value={adBudget}
                 onChange={(e) => setAdBudget(e.target.value)}
@@ -216,10 +252,11 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="create-campaign-status-select" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Status
               </label>
               <select
+                id="create-campaign-status-select"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as CampaignStatus)}
                 className="w-full px-2.5 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"

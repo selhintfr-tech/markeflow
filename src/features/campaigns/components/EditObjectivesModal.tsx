@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import type { CampaignObjective } from '../types';
 
@@ -17,6 +17,17 @@ export const EditObjectivesModal: React.FC<EditObjectivesModalProps> = ({
 }) => {
   const [list, setList] = useState<CampaignObjective[]>(objectives);
   const [newText, setNewText] = useState('');
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -53,7 +64,7 @@ export const EditObjectivesModal: React.FC<EditObjectivesModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+    <div role="dialog" aria-modal="true" aria-labelledby="edit-objectives-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
       <div className="bg-white rounded-xl shadow-xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="px-5 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -61,7 +72,7 @@ export const EditObjectivesModal: React.FC<EditObjectivesModalProps> = ({
               <CheckCircle2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#1E1B4B]">Edit Campaign Objectives</h3>
+              <h3 id="edit-objectives-modal-title" className="text-sm font-bold text-[#1E1B4B]">Edit Campaign Objectives</h3>
               <p className="text-[11px] text-[#64748B]">Update milestones and track status</p>
             </div>
           </div>

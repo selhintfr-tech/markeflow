@@ -68,17 +68,14 @@ export const CampaignsListPage: React.FC = () => {
     }
   }, [campaigns]);
 
-  // Filter campaigns by workspace if workspace matches, or allow viewing demo baseline
+  // Filter campaigns by active workspace; displays empty state when workspace has no campaigns
   const workspaceCampaigns = useMemo(() => {
     if (!currentWorkspace) return campaigns;
-    const filtered = campaigns.filter(
+    return campaigns.filter(
       (c) =>
         c.workspaceId === currentWorkspace.id ||
-        c.workspaceName === currentWorkspace.name ||
-        // Fallback for default demo workspace
-        currentWorkspace.id === 'ws-atlas-retail'
+        c.workspaceName === currentWorkspace.name
     );
-    return filtered.length > 0 ? filtered : campaigns;
   }, [campaigns, currentWorkspace]);
 
   // Derived KPI metrics

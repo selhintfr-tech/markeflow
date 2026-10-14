@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus,
   Info,
@@ -53,6 +53,19 @@ export const WorkspacesPage: React.FC = () => {
   const [editDescription, setEditDescription] = useState('');
   const [editLocation, setEditLocation] = useState('');
   const [editStatus, setEditStatus] = useState('Active');
+
+  // Handle Escape key to close modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isNewModalOpen) setIsNewModalOpen(false);
+        if (isEditModalOpen) setIsEditModalOpen(false);
+        if (deleteConfirmId) setDeleteConfirmId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isNewModalOpen, isEditModalOpen, deleteConfirmId]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -444,10 +457,10 @@ export const WorkspacesPage: React.FC = () => {
 
       {/* Modal: Create New Workspace */}
       {isNewModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="new-workspace-modal-title" className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <h2 className="text-base font-bold text-[#1E1B4B]">Create new workspace</h2>
+              <h2 id="new-workspace-modal-title" className="text-base font-bold text-[#1E1B4B]">Create new workspace</h2>
               <button
                 type="button"
                 onClick={() => {
@@ -469,8 +482,9 @@ export const WorkspacesPage: React.FC = () => {
 
             <form onSubmit={handleCreateWorkspace} className="mt-4 space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-[#1E1B4B] mb-1">Workspace Name *</label>
+                <label htmlFor="new-workspace-name-input" className="block font-semibold text-[#1E1B4B] mb-1">Workspace Name *</label>
                 <input
+                  id="new-workspace-name-input"
                   type="text"
                   placeholder="e.g. Atlas Growth SARL"
                   value={newName}
@@ -481,8 +495,9 @@ export const WorkspacesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="new-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
                 <input
+                  id="new-workspace-desc-input"
                   type="text"
                   placeholder="e.g. Retail and omnichannel marketing operations"
                   value={newDescription}
@@ -536,10 +551,10 @@ export const WorkspacesPage: React.FC = () => {
 
       {/* Modal: Edit Workspace */}
       {isEditModalOpen && editingWorkspace && (
-        <div className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" aria-labelledby="edit-workspace-modal-title" className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <h2 className="text-base font-bold text-[#1E1B4B]">Edit workspace</h2>
+              <h2 id="edit-workspace-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit workspace</h2>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
@@ -551,8 +566,9 @@ export const WorkspacesPage: React.FC = () => {
 
             <form onSubmit={handleUpdateWorkspace} className="mt-4 space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-[#1E1B4B] mb-1">Workspace Name *</label>
+                <label htmlFor="edit-workspace-name-input" className="block font-semibold text-[#1E1B4B] mb-1">Workspace Name *</label>
                 <input
+                  id="edit-workspace-name-input"
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
@@ -562,8 +578,9 @@ export const WorkspacesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="edit-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
                 <input
+                  id="edit-workspace-desc-input"
                   type="text"
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
@@ -582,8 +599,9 @@ export const WorkspacesPage: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-[#1E1B4B] mb-1">Status</label>
+                  <label htmlFor="edit-workspace-status-select" className="block font-semibold text-[#1E1B4B] mb-1">Status</label>
                   <select
+                    id="edit-workspace-status-select"
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] focus:border-[#6D28D9] focus:ring-1 focus:ring-[#6D28D9] outline-none bg-white"
@@ -616,7 +634,7 @@ export const WorkspacesPage: React.FC = () => {
 
       {/* Delete Confirmation Dialog */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div role="alertdialog" aria-modal="true" aria-labelledby="delete-workspace-dialog-title" aria-describedby="delete-workspace-dialog-desc" className="fixed inset-0 z-50 bg-[#0F172A]/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-150 text-center">
             <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-3">
               <Trash2 className="w-5 h-5 stroke-[2.2]" />

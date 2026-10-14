@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { ReportFormData, ReportType } from '../types';
 import { reportTypeCards } from '../data';
@@ -76,13 +76,24 @@ export const ReportCreationModal: React.FC<ReportCreationModalProps> = ({
     setFormData((prev) => ({ ...prev, type }));
   };
 
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="create-report-modal-title" className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl w-full max-w-2xl shadow-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-[#E2E8F0]">
-          <h2 className="text-lg font-semibold text-[#1E1B4B]">Create New Report</h2>
+          <h2 id="create-report-modal-title" className="text-lg font-semibold text-[#1E1B4B]">Create New Report</h2>
           <button
             type="button"
             onClick={onClose}

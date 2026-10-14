@@ -31,22 +31,24 @@ export const TasksPage: React.FC = () => {
     return initialTasks;
   });
 
-  // Re-sync tasks if workspace changes
-  useEffect(() => {
+  // Re-sync tasks if workspace changes (render-phase state adjustment avoids cascading renders)
+  const [prevStorageKey, setPrevStorageKey] = useState(storageKey);
+  if (storageKey !== prevStorageKey) {
+    setPrevStorageKey(storageKey);
+    let loaded = initialTasks;
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setTasks(parsed);
-          return;
+          loaded = parsed;
         }
       }
     } catch {
       // ignore
     }
-    setTasks(initialTasks);
-  }, [storageKey]);
+    setTasks(loaded);
+  }
 
   // Save to localStorage whenever tasks change
   useEffect(() => {
@@ -192,17 +194,13 @@ export const TasksPage: React.FC = () => {
     kpiFilter,
   ]);
 
-  // Reset page when filters change
-  useEffect(() => {
+  // Reset page when filters change (render-phase state adjustment)
+  const filterKey = `${searchQuery}-${assigneeFilter}-${priorityFilter}-${statusFilter}-${projectFilter}-${kpiFilter}`;
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
     setCurrentPage(1);
-  }, [
-    searchQuery,
-    assigneeFilter,
-    priorityFilter,
-    statusFilter,
-    projectFilter,
-    kpiFilter,
-  ]);
+  }
 
   // Paginated tasks
   const paginatedTasks = useMemo(() => {

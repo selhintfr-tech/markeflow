@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, TrendingUp } from 'lucide-react';
 
 interface AddResultsModalProps {
@@ -28,6 +28,17 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
   const [revenue, setRevenue] = useState('');
   const [isIncremental, setIsIncremental] = useState(true);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+
+  // Handle Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -67,7 +78,7 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
+    <div role="dialog" aria-modal="true" aria-labelledby="add-results-modal-title" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
       <div className="bg-white rounded-xl shadow-xl border border-[#E2E8F0] w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         <div className="px-5 py-4 border-b border-[#F1F5F9] flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -75,7 +86,7 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
               <TrendingUp className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#1E1B4B]">Add Campaign Results</h3>
+              <h3 id="add-results-modal-title" className="text-sm font-bold text-[#1E1B4B]">Add Campaign Results</h3>
               <p className="text-[11px] text-[#64748B]">{campaignName}</p>
             </div>
           </div>
@@ -115,10 +126,11 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+            <label htmlFor="results-reporting-date-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
               Reporting Date <span className="text-red-500">*</span>
             </label>
             <input
+              id="results-reporting-date-input"
               type="text"
               value={reportingDate}
               onChange={(e) => setReportingDate(e.target.value)}
@@ -134,10 +146,11 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="results-ad-spend-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Ad Spend (MAD) <span className="text-red-500">*</span>
               </label>
               <input
+                id="results-ad-spend-input"
                 type="number"
                 value={adSpend}
                 onChange={(e) => setAdSpend(e.target.value)}
@@ -153,10 +166,11 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="results-leads-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Generated Leads
               </label>
               <input
+                id="results-leads-input"
                 type="number"
                 value={leads}
                 onChange={(e) => setLeads(e.target.value)}
@@ -169,10 +183,11 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+              <label htmlFor="results-customers-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                 Acquired Customers
               </label>
               <input
+                id="results-customers-input"
                 type="number"
                 value={customers}
                 onChange={(e) => setCustomers(e.target.value)}
