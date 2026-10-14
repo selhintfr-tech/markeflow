@@ -18,7 +18,7 @@ export const MyProfilePage: React.FC = () => {
   const [sessions, setSessions] = useState<ActiveSession[]>(initialActiveSessions);
 
   // Success alert initial visibility matches Screenshot 2
-  const [showSuccessAlert, setShowSuccessAlert] = useState(true);
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
 
   // Modals state
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -61,9 +61,10 @@ export const MyProfilePage: React.FC = () => {
           <button
             type="button"
             onClick={() => setToastMessage(null)}
-            className="ml-2 text-white/80 hover:text-white font-bold"
+            className="ml-2 text-white/80 hover:text-white p-1 rounded-md hover:bg-white/10 transition-colors"
+            aria-label="Dismiss notification"
           >
-            ×
+            <span aria-hidden="true" className="font-bold text-base">&times;</span>
           </button>
         </div>
       )}

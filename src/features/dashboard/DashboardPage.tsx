@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   Calendar,
   Plus,
@@ -16,6 +17,7 @@ import { UpcomingTasksCard } from './components/UpcomingTasksCard';
 import { dashboardStats } from '../../data/mock';
 
 export const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
   const [selectedPeriod, setSelectedPeriod] = useState('October 2026');
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
 
@@ -24,11 +26,15 @@ export const DashboardPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
-        <span className="hover:text-[#1E1B4B] cursor-pointer">Overview</span>
+      <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-[#64748B]">
+        <Link to="/" className="hover:text-[#1E1B4B] transition-colors">
+          Overview
+        </Link>
         <span>/</span>
-        <span className="text-[#1E1B4B] font-medium">Dashboard</span>
-      </div>
+        <span className="text-[#1E1B4B] font-medium" aria-current="page">
+          Dashboard
+        </span>
+      </nav>
 
       {/* Header section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -47,7 +53,10 @@ export const DashboardPage: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] hover:bg-slate-50 shadow-2xs transition-colors"
+              aria-haspopup="listbox"
+              aria-expanded={showPeriodDropdown}
+              aria-label="Select reporting period"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] hover:bg-slate-50 shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
             >
               <Calendar className="w-3.5 h-3.5 text-[#64748B]" />
               <span>{selectedPeriod}</span>
@@ -55,10 +64,15 @@ export const DashboardPage: React.FC = () => {
             </button>
 
             {showPeriodDropdown && (
-              <div className="absolute right-0 mt-1.5 w-48 rounded-lg bg-white border border-[#E2E8F0] shadow-lg py-1 z-40">
+              <div
+                role="listbox"
+                className="absolute right-0 mt-1.5 w-48 rounded-lg bg-white border border-[#E2E8F0] shadow-lg py-1 z-40"
+              >
                 {periods.map((period) => (
                   <button
                     key={period}
+                    role="option"
+                    aria-selected={selectedPeriod === period}
                     onClick={() => {
                       setSelectedPeriod(period);
                       setShowPeriodDropdown(false);
@@ -78,7 +92,9 @@ export const DashboardPage: React.FC = () => {
 
           <button
             type="button"
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
+            onClick={() => navigate('/campaigns')}
+            aria-label="Create new campaign"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#6D28D9] focus:ring-offset-2"
           >
             <Plus className="w-4 h-4 stroke-[2.5]" />
             <span>New Campaign</span>
@@ -87,35 +103,35 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Quick Action Navigation links */}
-      <div className="flex items-center justify-end gap-6 text-xs font-semibold text-[#6D28D9]">
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors"
+      <div className="flex flex-wrap items-center justify-start md:justify-end gap-4 sm:gap-6 text-xs font-semibold text-[#6D28D9]">
+        <Link
+          to="/campaigns"
+          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors focus:outline-none focus:underline"
         >
           <Megaphone className="w-4 h-4" />
           <span>Campaigns</span>
-        </button>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors"
+        </Link>
+        <Link
+          to="/finance/budget"
+          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors focus:outline-none focus:underline"
         >
           <CreditCard className="w-4 h-4" />
           <span>Budget</span>
-        </button>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors"
+        </Link>
+        <Link
+          to="/analytics"
+          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors focus:outline-none focus:underline"
         >
           <BarChart2 className="w-4 h-4" />
           <span>Analytics</span>
-        </button>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors"
+        </Link>
+        <Link
+          to="/reports"
+          className="flex items-center gap-1.5 hover:text-[#5B21B6] transition-colors focus:outline-none focus:underline"
         >
           <FileText className="w-4 h-4" />
           <span>Reports</span>
-        </button>
+        </Link>
       </div>
 
       {/* Top 4 KPI Stat Cards */}

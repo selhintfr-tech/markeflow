@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronRight, Calendar } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { upcomingTasksList } from '../../../data/mock';
 import type { UpcomingTask } from '../../../types';
 
@@ -25,13 +26,13 @@ export const UpcomingTasksCard: React.FC = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="flex items-center gap-1 text-xs font-semibold text-[#6D28D9] hover:text-[#5B21B6] transition-colors"
+        <Link
+          to="/tasks"
+          className="flex items-center gap-1 text-xs font-semibold text-[#6D28D9] hover:text-[#5B21B6] transition-colors focus:outline-none focus:underline"
         >
           <span>View all</span>
           <ChevronRight className="w-3.5 h-3.5" />
-        </button>
+        </Link>
       </div>
 
       {/* Task List */}
@@ -46,6 +47,7 @@ export const UpcomingTasksCard: React.FC = () => {
                 type="checkbox"
                 checked={task.completed}
                 onChange={() => toggleTask(task.id)}
+                aria-label={`Mark "${task.title}" as ${task.completed ? 'incomplete' : 'complete'}`}
                 className="mt-0.5 w-4 h-4 rounded border-[#CBD5E1] text-[#6D28D9] focus:ring-[#6D28D9] cursor-pointer"
               />
               <div className="min-w-0 flex-1">
@@ -54,6 +56,14 @@ export const UpcomingTasksCard: React.FC = () => {
                     task.completed ? 'line-through text-[#94A3B8]' : ''
                   }`}
                   onClick={() => toggleTask(task.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleTask(task.id);
+                    }
+                  }}
                 >
                   {task.title}
                 </div>
@@ -64,8 +74,10 @@ export const UpcomingTasksCard: React.FC = () => {
             </div>
 
             {/* Date Tag */}
-            <div className="flex items-center gap-1 text-xs font-medium text-[#EF4444] shrink-0 mt-0.5">
-              <Calendar className="w-3.5 h-3.5 text-[#EF4444]" />
+            <div className={`flex items-center gap-1 text-xs font-medium shrink-0 mt-0.5 ${
+              task.completed ? 'text-[#94A3B8]' : 'text-[#EF4444]'
+            }`}>
+              <Calendar className="w-3.5 h-3.5" />
               <span>{task.dueDate}</span>
             </div>
           </div>

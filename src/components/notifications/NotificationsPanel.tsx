@@ -8,7 +8,7 @@ interface NotificationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   panelId: string;
-  closeRef: RefObject<HTMLButtonElement>;
+  closeRef: RefObject<HTMLButtonElement | null>;
   workspaceId?: string;
 }
 

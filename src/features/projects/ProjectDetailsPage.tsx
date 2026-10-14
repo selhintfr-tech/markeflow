@@ -19,6 +19,16 @@ import { projectsList, initialMarketingProjectsList } from '../../data/mock';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import type { ProjectDetail, ProjectLinkedCampaign, ProjectTaskItem } from '../../types';
 
+
+const resolveCampaignSlug = (name: string): string => {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  if (slug.includes('autumn-launch')) return 'autumn-launch-2026';
+  if (slug.includes('retargeting')) return 'october-retargeting';
+  if (slug.includes('holiday')) return 'holiday-season-push';
+  if (slug.includes('summer')) return 'summer-clearance';
+  return slug;
+};
+
 export const ProjectDetailsPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
 
@@ -535,8 +545,10 @@ export const ProjectDetailsPage: React.FC = () => {
                   <tbody className="divide-y divide-[#F8FAFC]">
                     {project.linkedCampaigns.map((camp) => (
                       <tr key={camp.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-2.5 pr-3 font-semibold text-[#6D28D9] hover:underline cursor-pointer">
-                          {camp.name}
+                        <td className="py-2.5 pr-3">
+                          <Link to={`/campaigns/${resolveCampaignSlug(camp.name)}`} className="font-semibold text-[#6D28D9] hover:underline focus:outline-none focus:underline">
+                            {camp.name}
+                          </Link>
                         </td>
                         <td className="py-2.5 pr-3 text-[#64748B]">{camp.channel}</td>
                         <td className="py-2.5 pr-3">
@@ -800,7 +812,11 @@ export const ProjectDetailsPage: React.FC = () => {
               <tbody className="divide-y divide-[#F8FAFC]">
                 {project.linkedCampaigns.map((camp) => (
                   <tr key={camp.id} className="hover:bg-slate-50/60">
-                    <td className="py-3 font-semibold text-[#6D28D9]">{camp.name}</td>
+                    <td className="py-3">
+                      <Link to={`/campaigns/${resolveCampaignSlug(camp.name)}`} className="font-semibold text-[#6D28D9] hover:underline focus:outline-none focus:underline">
+                        {camp.name}
+                      </Link>
+                    </td>
                     <td className="py-3 text-[#64748B]">{camp.channel}</td>
                     <td className="py-3">
                       <StatusBadge status={camp.status} />
