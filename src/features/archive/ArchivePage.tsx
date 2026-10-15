@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Info, CheckCircle2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Info, CheckCircle2, RotateCcw, X } from 'lucide-react';
 import { initialArchivedRecords } from '../../data/mock';
 import type { ArchivedRecord, ArchiveCategory } from '../../types';
 import { ArchiveCategoryTabs } from './components/ArchiveCategoryTabs';
@@ -8,11 +8,37 @@ import { ArchiveTable } from './components/ArchiveTable';
 import { RestoreConfirmationModal } from './components/RestoreConfirmationModal';
 import { ArchiveDetailsModal } from './components/ArchiveDetailsModal';
 
-export const ArchivePage: React.FC = () => {
-  // Master archive records in frontend state
-  const [records, setRecords] = useState<ArchivedRecord[]>(initialArchivedRecords);
+const ARCHIVE_STORAGE_KEY = 'marketflow_archived_records_v1';
 
-  // Active Category Tab: starts as 'Campaigns' matching Screenshot 1
+const getInitialArchivedRecords = (): ArchivedRecord[] => {
+  try {
+    const stored = localStorage.getItem(ARCHIVE_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to retrieve archived records from localStorage:', err);
+  }
+  return initialArchivedRecords;
+};
+
+export const ArchivePage: React.FC = () => {
+  // Master archive records in frontend state with persistence
+  const [records, setRecords] = useState<ArchivedRecord[]>(getInitialArchivedRecords);
+
+  // Synchronize records with localStorage on modification
+  useEffect(() => {
+    try {
+      localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(records));
+    } catch (err) {
+      console.warn('Unable to persist archived records to localStorage:', err);
+    }
+  }, [records]);
+
+  // Active Category Tab: starts as 'Campaigns' matching initial view
   const [activeTab, setActiveTab] = useState<ArchiveCategory>('Campaigns');
   // Flag to know if tab was clicked by user to strictly filter by tab category
   const [isTabFilterApplied, setIsTabFilterApplied] = useState(false);
@@ -37,7 +63,7 @@ export const ArchivePage: React.FC = () => {
   const handleTabChange = (tab: ArchiveCategory) => {
     setActiveTab(tab);
     setIsTabFilterApplied(true);
-    // If user clicks a tab, also synchronize record type filter if convenient
+    // If user clicks a tab, also synchronize record type filter
     if (tab === 'Projects') setSelectedRecordType('Project');
     else if (tab === 'Campaigns') setSelectedRecordType('Campaign');
     else if (tab === 'Reports') setSelectedRecordType('Report');
@@ -63,13 +89,23 @@ export const ArchivePage: React.FC = () => {
     return records.filter((record) => {
       // 1. Search Query
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+        const query = searchQuery.trim().toLowerCase();
         const matchesName = record.name.toLowerCase().includes(query);
         const matchesSubtitle = record.subtitle.toLowerCase().includes(query);
         const matchesWorkspace = record.workspace.toLowerCase().includes(query);
         const matchesBy = record.archivedBy.toLowerCase().includes(query);
         const matchesType = record.type.toLowerCase().includes(query);
-        if (!matchesName && !matchesSubtitle && !matchesWorkspace && !matchesBy && !matchesType) {
+        const matchesStatus = record.previousStatus.toLowerCase().includes(query);
+        const matchesDestination = record.destination.toLowerCase().includes(query);
+        if (
+          !matchesName &&
+          !matchesSubtitle &&
+          !matchesWorkspace &&
+          !matchesBy &&
+          !matchesType &&
+          !matchesStatus &&
+          !matchesDestination
+        ) {
           return false;
         }
       }
@@ -92,7 +128,7 @@ export const ArchivePage: React.FC = () => {
         if (record.category !== activeTab) return false;
       }
 
-      // 5. Date Filter (demo support for Year filters)
+      // 5. Date Filter (support Year filters and range)
       if (selectedDateRange === 'Year 2026' && !record.archivedDate.includes('2026')) {
         return false;
       }
@@ -124,7 +160,7 @@ export const ArchivePage: React.FC = () => {
 
   // Handle Restore Confirm
   const handleConfirmRestore = (record: ArchivedRecord) => {
-    // Remove from archived records list
+    // Remove from archived records list (persisted via useEffect to localStorage)
     setRecords((prev) => prev.filter((r) => r.id !== record.id));
     setIsRestoreModalOpen(false);
     setSelectedRecordForRestore(null);
@@ -134,6 +170,12 @@ export const ArchivePage: React.FC = () => {
     setTimeout(() => {
       setToastMessage(null);
     }, 4500);
+  };
+
+  // Handle Details View
+  const handleViewDetails = (record: ArchivedRecord) => {
+    setSelectedRecordForDetails(record);
+    setIsDetailsModalOpen(true);
   };
 
   // Handle Clear Filters
@@ -146,6 +188,16 @@ export const ArchivePage: React.FC = () => {
     setIsTabFilterApplied(false);
   };
 
+  // Re-seed initial demo records
+  const handleResetArchiveData = () => {
+    setRecords(initialArchivedRecords);
+    handleClearFilters();
+    setToastMessage('Archive demo data reset to default records.');
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3000);
+  };
+
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-12 animate-in fade-in duration-200">
       {/* Toast Notification */}
@@ -156,9 +208,10 @@ export const ArchivePage: React.FC = () => {
           <button
             type="button"
             onClick={() => setToastMessage(null)}
-            className="ml-2 text-white/80 hover:text-white font-bold"
+            className="ml-2 text-white/80 hover:text-white p-0.5 rounded transition-colors"
+            aria-label="Dismiss notification"
           >
-            ×
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
@@ -171,20 +224,34 @@ export const ArchivePage: React.FC = () => {
       </div>
 
       {/* Header */}
-      <div>
-        <h1 className="text-2xl lg:text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
-          Archive
-        </h1>
-        <p className="text-sm text-[#64748B] mt-1">
-          Access historical marketing records without cluttering active workspaces.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
+            Archive
+          </h1>
+          <p className="text-sm text-[#64748B] mt-1">
+            Access historical marketing records without cluttering active workspaces.
+          </p>
+        </div>
+
+        {records.length !== initialArchivedRecords.length && (
+          <button
+            type="button"
+            onClick={handleResetArchiveData}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6D28D9] bg-[#F5F3FF] border border-[#DDD6FE] rounded-lg hover:bg-[#EDE9FE] transition-colors"
+            title="Reset restored items back to initial archive for demo testing"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Reset Demo Records</span>
+          </button>
+        )}
       </div>
 
       {/* Full-width Light-Blue Information Banner */}
       <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl px-4 py-3 flex items-center gap-3">
         <Info className="w-4 h-4 text-[#2563EB] shrink-0" />
         <span className="text-xs md:text-sm text-[#1E40AF] font-medium">
-          Archived records remain available for reporting and historical comparison.
+          Archived records remain available for reporting and historical comparison. Restoring returns them to active workspace boards.
         </span>
       </div>
 
@@ -205,13 +272,10 @@ export const ArchivePage: React.FC = () => {
         onDateRangeChange={setSelectedDateRange}
       />
 
-      {/* Archive Table */}
+      {/* Archive Records Table */}
       <ArchiveTable
         records={filteredRecords}
-        onViewDetails={(record) => {
-          setSelectedRecordForDetails(record);
-          setIsDetailsModalOpen(true);
-        }}
+        onViewDetails={handleViewDetails}
         onRestore={handleTriggerRestore}
         onClearFilters={handleClearFilters}
       />
@@ -235,7 +299,10 @@ export const ArchivePage: React.FC = () => {
           setIsDetailsModalOpen(false);
           setSelectedRecordForDetails(null);
         }}
-        onRestoreClick={handleTriggerRestore}
+        onRestoreClick={(record) => {
+          setIsDetailsModalOpen(false);
+          handleTriggerRestore(record);
+        }}
       />
     </div>
   );
