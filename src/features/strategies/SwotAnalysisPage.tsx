@@ -51,6 +51,30 @@ export const SwotAnalysisPage: React.FC = () => {
 
   // Dropdown menus for 3-dot buttons
   const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const [deleteItemTarget, setDeleteItemTarget] = useState<{
+    category: SwotCategory;
+    itemId: string;
+    itemTitle: string;
+  } | null>(null);
+
+  // Escape key handler for all active modals & menus
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deleteItemTarget) setDeleteItemTarget(null);
+        else if (isAddItemModalOpen) setIsAddItemModalOpen(false);
+        else if (isEditModalOpen) {
+          setIsEditModalOpen(false);
+          setEditItemTarget(null);
+        }
+        else if (isEditMetaModalOpen) setIsEditMetaModalOpen(false);
+        else if (openDropdownId) setOpenDropdownId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteItemTarget, isAddItemModalOpen, isEditModalOpen, isEditMetaModalOpen, openDropdownId]);
+
 
   // Open Add Item modal configured for specific category
   const handleOpenAdd = (category: SwotCategory) => {
@@ -106,12 +130,10 @@ export const SwotAnalysisPage: React.FC = () => {
     setEditItemTarget(null);
   };
 
-  // Delete SWOT item with confirmation
-  const handleDeleteItem = (category: SwotCategory, itemId: string) => {
-    setOpenDropdownId(null);
-    if (!window.confirm('Are you sure you want to delete this SWOT item?')) {
-      return;
-    }
+  // Delete SWOT item confirmation handler
+  const handleConfirmDelete = () => {
+    if (!deleteItemTarget) return;
+    const { category, itemId } = deleteItemTarget;
 
     setSwotData((prev) => {
       const updatedList = prev[category]
@@ -124,6 +146,7 @@ export const SwotAnalysisPage: React.FC = () => {
         lastUpdated: '12 Oct 2026',
       };
     });
+    setDeleteItemTarget(null);
   };
 
   // Save Analysis metadata
@@ -339,6 +362,9 @@ export const SwotAnalysisPage: React.FC = () => {
             </div>
 
             <div className="border-t border-[#F1F5F9] divide-y divide-[#F1F5F9]">
+              {swotData.strengths.length === 0 && (
+                <div className="py-8 text-center text-xs text-[#94A3B8]">No strengths recorded yet. Click &quot;Add Item&quot; to record one.</div>
+              )}
               {swotData.strengths.map((item) => (
                 <div key={item.id} className="py-4 flex items-start justify-between gap-3 group">
                   <div className="flex items-start gap-3">
@@ -378,7 +404,7 @@ export const SwotAnalysisPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteItem('strengths', item.id)}
+                          onClick={() => { setOpenDropdownId(null); setDeleteItemTarget({ category: 'strengths', itemId: item.id, itemTitle: item.title }); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -420,6 +446,9 @@ export const SwotAnalysisPage: React.FC = () => {
             </div>
 
             <div className="border-t border-[#F1F5F9] divide-y divide-[#F1F5F9]">
+              {swotData.weaknesses.length === 0 && (
+                <div className="py-8 text-center text-xs text-[#94A3B8]">No weaknesses recorded yet. Click &quot;Add Item&quot; to record one.</div>
+              )}
               {swotData.weaknesses.map((item) => (
                 <div key={item.id} className="py-4 flex items-start justify-between gap-3 group">
                   <div className="flex items-start gap-3">
@@ -459,7 +488,7 @@ export const SwotAnalysisPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteItem('weaknesses', item.id)}
+                          onClick={() => { setOpenDropdownId(null); setDeleteItemTarget({ category: 'weaknesses', itemId: item.id, itemTitle: item.title }); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -501,6 +530,9 @@ export const SwotAnalysisPage: React.FC = () => {
             </div>
 
             <div className="border-t border-[#F1F5F9] divide-y divide-[#F1F5F9]">
+              {swotData.opportunities.length === 0 && (
+                <div className="py-8 text-center text-xs text-[#94A3B8]">No opportunities recorded yet. Click &quot;Add Item&quot; to record one.</div>
+              )}
               {swotData.opportunities.map((item) => (
                 <div key={item.id} className="py-4 flex items-start justify-between gap-3 group">
                   <div className="flex items-start gap-3">
@@ -540,7 +572,7 @@ export const SwotAnalysisPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteItem('opportunities', item.id)}
+                          onClick={() => { setOpenDropdownId(null); setDeleteItemTarget({ category: 'opportunities', itemId: item.id, itemTitle: item.title }); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -582,6 +614,9 @@ export const SwotAnalysisPage: React.FC = () => {
             </div>
 
             <div className="border-t border-[#F1F5F9] divide-y divide-[#F1F5F9]">
+              {swotData.threats.length === 0 && (
+                <div className="py-8 text-center text-xs text-[#94A3B8]">No threats recorded yet. Click &quot;Add Item&quot; to record one.</div>
+              )}
               {swotData.threats.map((item) => (
                 <div key={item.id} className="py-4 flex items-start justify-between gap-3 group">
                   <div className="flex items-start gap-3">
@@ -621,7 +656,7 @@ export const SwotAnalysisPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDeleteItem('threats', item.id)}
+                          onClick={() => { setOpenDropdownId(null); setDeleteItemTarget({ category: 'threats', itemId: item.id, itemTitle: item.title }); }}
                           className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -674,6 +709,9 @@ export const SwotAnalysisPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
+              {swotData.strategicActions.length === 0 && (
+                <tr><td colSpan={4} className="py-6 text-center text-xs text-[#94A3B8]">No strategic initiatives derived yet.</td></tr>
+              )}
               {swotData.strategicActions.map((action) => (
                 <tr key={action.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="py-3.5 font-medium text-[#1E1B4B] max-w-sm pr-4">
@@ -713,16 +751,17 @@ export const SwotAnalysisPage: React.FC = () => {
 
       {/* MODAL: Add SWOT Item */}
       {isAddItemModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-swot-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B] capitalize">
+              <h3 id="add-swot-modal-title" className="text-base font-bold text-[#1E1B4B] capitalize">
                 Add {activeCategoryForAdd.slice(0, -1)} Item
               </h3>
               <button
                 type="button"
                 onClick={() => setIsAddItemModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -730,10 +769,11 @@ export const SwotAnalysisPage: React.FC = () => {
 
             <form onSubmit={handleAddItemSubmit} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="swot-add-cat" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Category
                 </label>
                 <select
+                  id="swot-add-cat"
                   value={activeCategoryForAdd}
                   onChange={(e) => setActiveCategoryForAdd(e.target.value as SwotCategory)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] capitalize"
@@ -746,10 +786,11 @@ export const SwotAnalysisPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="swot-add-title" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Item Title *
                 </label>
                 <input
+                  id="swot-add-title"
                   type="text"
                   required
                   value={newItemTitle}
@@ -760,10 +801,11 @@ export const SwotAnalysisPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="swot-add-desc" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Description
                 </label>
                 <textarea
+                  id="swot-add-desc"
                   rows={3}
                   value={newItemDesc}
                   onChange={(e) => setNewItemDesc(e.target.value)}
@@ -794,14 +836,18 @@ export const SwotAnalysisPage: React.FC = () => {
 
       {/* MODAL: Edit SWOT Item */}
       {isEditModalOpen && editItemTarget && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-swot-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Edit SWOT Item</h3>
+              <h3 id="edit-swot-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit SWOT Item</h3>
               <button
                 type="button"
-                onClick={() => setIsEditModalOpen(false)}
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditItemTarget(null);
+                }}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -809,10 +855,11 @@ export const SwotAnalysisPage: React.FC = () => {
 
             <form onSubmit={handleEditItemSubmit} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="swot-edit-title" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Item Title *
                 </label>
                 <input
+                  id="swot-edit-title"
                   type="text"
                   required
                   value={editItemTarget.item.title}
@@ -827,10 +874,11 @@ export const SwotAnalysisPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="swot-edit-desc" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Description
                 </label>
                 <textarea
+                  id="swot-edit-desc"
                   rows={3}
                   value={editItemTarget.item.description}
                   onChange={(e) =>
@@ -846,7 +894,10 @@ export const SwotAnalysisPage: React.FC = () => {
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#F1F5F9]">
                 <button
                   type="button"
-                  onClick={() => setIsEditModalOpen(false)}
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditItemTarget(null);
+                  }}
                   className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-slate-50 transition-colors"
                 >
                   Cancel
@@ -865,14 +916,15 @@ export const SwotAnalysisPage: React.FC = () => {
 
       {/* MODAL: Edit Analysis Info */}
       {isEditMetaModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-swot-meta-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Edit SWOT Information</h3>
+              <h3 id="edit-swot-meta-title" className="text-base font-bold text-[#1E1B4B]">Edit SWOT Information</h3>
               <button
                 type="button"
                 onClick={() => setIsEditMetaModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -880,10 +932,11 @@ export const SwotAnalysisPage: React.FC = () => {
 
             <form onSubmit={handleSaveMeta} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                  Strategy Name
+                <label htmlFor="swot-meta-strategy" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  Strategy Name *
                 </label>
                 <input
+                  id="swot-meta-strategy"
                   type="text"
                   required
                   value={metaStrategyName}
@@ -893,10 +946,11 @@ export const SwotAnalysisPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                  Author
+                <label htmlFor="swot-meta-author" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  Author *
                 </label>
                 <input
+                  id="swot-meta-author"
                   type="text"
                   required
                   value={metaAuthor}
@@ -924,6 +978,38 @@ export const SwotAnalysisPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* CONFIRM DELETE MODAL */}
+      {deleteItemTarget && (
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-swot-item-title" aria-describedby="delete-swot-item-desc">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-sm p-6 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h4 id="delete-swot-item-title" className="text-base font-bold text-[#1E1B4B]">Delete SWOT Item?</h4>
+            <p id="delete-swot-item-desc" className="text-xs text-[#64748B] mt-1.5">
+              Are you sure you want to delete &ldquo;{deleteItemTarget.itemTitle}&rdquo;? This cannot be undone.
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteItemTarget(null)}
+                className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-2xs"
+              >
+                Delete Item
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

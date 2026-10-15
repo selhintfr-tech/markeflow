@@ -175,6 +175,20 @@ export const MarketResearchPage: React.FC = () => {
     }
   };
 
+  // Escape key handler for all active modals
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isNewStudyModalOpen) setIsNewStudyModalOpen(false);
+        else if (isEditStudyModalOpen) setIsEditStudyModalOpen(false);
+        else if (isAddFindingModalOpen) setIsAddFindingModalOpen(false);
+        else if (isUploadDocModalOpen) setIsUploadDocModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isNewStudyModalOpen, isEditStudyModalOpen, isAddFindingModalOpen, isUploadDocModalOpen]);
+
   // Export functional CSV
   const handleExportCSV = () => {
     const csvRows: string[] = [];
@@ -885,6 +899,13 @@ export const MarketResearchPage: React.FC = () => {
                               </td>
                             </tr>
                           ))}
+                          {currentStudy.pricingObservations.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="py-6 text-center text-xs text-[#94A3B8]">
+                                No pricing observations recorded.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -946,6 +967,13 @@ export const MarketResearchPage: React.FC = () => {
                               </td>
                             </tr>
                           ))}
+                          {currentStudy.sourceReferences.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="py-6 text-center text-xs text-[#94A3B8]">
+                                No source references recorded. Click "Upload doc" to add a reference.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -990,6 +1018,13 @@ export const MarketResearchPage: React.FC = () => {
                               </td>
                             </tr>
                           ))}
+                          {currentStudy.recordedFindings.length === 0 && (
+                            <tr>
+                              <td colSpan={3} className="py-6 text-center text-xs text-[#94A3B8]">
+                                No recorded findings yet. Click "Add finding" to record one.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>
@@ -1003,14 +1038,15 @@ export const MarketResearchPage: React.FC = () => {
 
       {/* MODAL 1: New study */}
       {isNewStudyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="new-study-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Create New Market Study</h3>
+              <h3 id="new-study-modal-title" className="text-base font-bold text-[#1E1B4B]">Create New Market Study</h3>
               <button
                 type="button"
                 onClick={() => setIsNewStudyModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1018,25 +1054,27 @@ export const MarketResearchPage: React.FC = () => {
 
             <form onSubmit={handleCreateNewStudy} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="new-study-title" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Study Title *
                 </label>
                 <input
+                  id="new-study-title"
                   type="text"
                   required
                   value={newStudyTitle}
                   onChange={(e) => setNewStudyTitle(e.target.value)}
-                  placeholder="e.g. Morocco Retail Market — Autumn 2026"
+                  placeholder="e.g. Morocco Retail Market – Autumn 2026"
                   className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  <label htmlFor="new-study-period" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                     Period
                   </label>
                   <input
+                    id="new-study-period"
                     type="text"
                     value={newStudyPeriod}
                     onChange={(e) => setNewStudyPeriod(e.target.value)}
@@ -1046,10 +1084,11 @@ export const MarketResearchPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  <label htmlFor="new-study-status" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                     Status
                   </label>
                   <select
+                    id="new-study-status"
                     value={newStudyStatus}
                     onChange={(e) => setNewStudyStatus(e.target.value as StudyStatus)}
                     className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
@@ -1063,10 +1102,11 @@ export const MarketResearchPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="new-study-desc" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Study Overview & Objective
                 </label>
                 <textarea
+                  id="new-study-desc"
                   rows={3}
                   value={newStudyDesc}
                   onChange={(e) => setNewStudyDesc(e.target.value)}
@@ -1097,14 +1137,15 @@ export const MarketResearchPage: React.FC = () => {
 
       {/* MODAL 2: Edit study */}
       {isEditStudyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-study-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Edit Study Details</h3>
+              <h3 id="edit-study-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit Study Details</h3>
               <button
                 type="button"
                 onClick={() => setIsEditStudyModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1112,10 +1153,11 @@ export const MarketResearchPage: React.FC = () => {
 
             <form onSubmit={handleSaveEditStudy} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="edit-study-title" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Study Title *
                 </label>
                 <input
+                  id="edit-study-title"
                   type="text"
                   required
                   value={editTitle}
@@ -1126,10 +1168,11 @@ export const MarketResearchPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  <label htmlFor="edit-study-period" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                     Period
                   </label>
                   <input
+                    id="edit-study-period"
                     type="text"
                     value={editPeriod}
                     onChange={(e) => setEditPeriod(e.target.value)}
@@ -1138,10 +1181,11 @@ export const MarketResearchPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  <label htmlFor="edit-study-status" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                     Status
                   </label>
                   <select
+                    id="edit-study-status"
                     value={editStatus}
                     onChange={(e) => setEditStatus(e.target.value as StudyStatus)}
                     className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
@@ -1155,11 +1199,12 @@ export const MarketResearchPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                  Study Overview
+                <label htmlFor="edit-study-desc" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  Study Overview & Objective
                 </label>
                 <textarea
-                  rows={4}
+                  id="edit-study-desc"
+                  rows={3}
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
@@ -1188,14 +1233,15 @@ export const MarketResearchPage: React.FC = () => {
 
       {/* MODAL 3: Add Finding */}
       {isAddFindingModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-finding-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Add Market Finding</h3>
+              <h3 id="add-finding-modal-title" className="text-base font-bold text-[#1E1B4B]">Add Market Finding</h3>
               <button
                 type="button"
                 onClick={() => setIsAddFindingModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1203,10 +1249,11 @@ export const MarketResearchPage: React.FC = () => {
 
             <form onSubmit={handleAddFinding} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="new-finding-text" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Finding Summary *
                 </label>
                 <textarea
+                  id="new-finding-text"
                   rows={3}
                   required
                   value={newFindingText}
@@ -1217,10 +1264,11 @@ export const MarketResearchPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="new-finding-status" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Status
                 </label>
                 <select
+                  id="new-finding-status"
                   value={newFindingStatus}
                   onChange={(e) => setNewFindingStatus(e.target.value as FindingStatus)}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-[#E2E8F0] bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
@@ -1253,14 +1301,15 @@ export const MarketResearchPage: React.FC = () => {
 
       {/* MODAL 4: Upload Document */}
       {isUploadDocModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="upload-doc-modal-title">
           <div className="bg-white rounded-2xl border border-[#E2E8F0] shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#F1F5F9]">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Upload Research Document</h3>
+              <h3 id="upload-doc-modal-title" className="text-base font-bold text-[#1E1B4B]">Upload Research Document</h3>
               <button
                 type="button"
                 onClick={() => setIsUploadDocModalOpen(false)}
                 className="p-1 rounded-lg hover:bg-slate-100 text-[#94A3B8] hover:text-[#1E1B4B]"
+                aria-label="Close dialog"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1268,10 +1317,11 @@ export const MarketResearchPage: React.FC = () => {
 
             <form onSubmit={handleUploadSubmit} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-2">
+                <label htmlFor="upload-doc-file" className="block text-xs font-semibold text-[#1E1B4B] mb-2">
                   Select Document / Evidence File
                 </label>
                 <input
+                  id="upload-doc-file"
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileChange}
@@ -1320,6 +1370,7 @@ export const MarketResearchPage: React.FC = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

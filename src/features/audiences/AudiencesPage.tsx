@@ -17,6 +17,7 @@ import {
   Edit2,
   X,
   Check,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { audiencesKPIs, initialAudienceSegments } from '../../data/mock';
@@ -37,6 +38,7 @@ export const AudiencesPage: React.FC = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isUseInCampaignOpen, setIsUseInCampaignOpen] = useState(false);
   const [activeMenuSegmentId, setActiveMenuSegmentId] = useState<string | null>(null);
+  const [deleteConfirmSegId, setDeleteConfirmSegId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Form states for Create / Edit
@@ -53,6 +55,21 @@ export const AudiencesPage: React.FC = () => {
     source: 'Website forms, social campaigns',
     status: 'Active' as 'Active' | 'Draft' | 'Archived',
   });
+
+  // Escape key handler for modals
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deleteConfirmSegId) setDeleteConfirmSegId(null);
+        else if (isCreateOpen) setIsCreateOpen(false);
+        else if (isEditOpen) setIsEditOpen(false);
+        else if (isUseInCampaignOpen) setIsUseInCampaignOpen(false);
+        else if (activeMenuSegmentId) setActiveMenuSegmentId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteConfirmSegId, isCreateOpen, isEditOpen, isUseInCampaignOpen, activeMenuSegmentId]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -155,6 +172,19 @@ export const AudiencesPage: React.FC = () => {
     setSelectedSegmentId(newSeg.id);
     setIsCreateOpen(false);
     showToast(`Created segment "${newSeg.name}"`);
+  };
+
+  const handleDeleteSegment = (id: string) => {
+    setSegments((prev) => prev.filter((s) => s.id !== id));
+    if (selectedSegmentId === id) {
+      const remaining = segments.filter((s) => s.id !== id);
+      if (remaining.length > 0) {
+        setSelectedSegmentId(remaining[0].id);
+      }
+    }
+    setDeleteConfirmSegId(null);
+    setActiveMenuSegmentId(null);
+    showToast('Audience segment deleted.');
   };
 
   const handleSaveEdit = (e: React.FormEvent) => {
@@ -509,14 +539,48 @@ export const AudiencesPage: React.FC = () => {
                       </tr>
                     );
                   })}
+
+                {filteredSegments.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center">
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                        <div className="w-10 h-10 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center mb-3">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <h4 className="text-sm font-bold text-[#1E1B4B]">No audience segments found</h4>
+                        <p className="text-xs text-[#64748B] mt-1">
+                          {segments.length === 0
+                            ? 'No audience segments created yet. Click "Create segment" to get started.'
+                            : 'No segments match your current search and region filter.'}
+                        </p>
+                        <div className="mt-4 flex items-center gap-2">
+                          {(searchQuery || selectedRegion !== 'All regions') ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchQuery('');
+                                setSelectedRegion('All regions');
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE] transition-colors"
+                            >
+                              Clear filters
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleOpenCreate}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#6D28D9] text-white hover:bg-[#5B21B6] transition-colors"
+                            >
+                              Create Segment
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 </tbody>
               </table>
-
-              {filteredSegments.length === 0 && (
-                <div className="py-12 text-center text-xs text-[#94A3B8]">
-                  No segments match your current filter.
-                </div>
-              )}
             </div>
           </div>
 
@@ -722,14 +786,15 @@ export const AudiencesPage: React.FC = () => {
 
       {/* CREATE SEGMENT MODAL */}
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4" role="dialog" aria-modal="true" aria-labelledby="create-segment-modal-title">
+          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Create Audience Segment</h3>
+              <h3 id="create-segment-modal-title" className="text-base font-bold text-[#1E1B4B]">Create Audience Segment</h3>
               <button
                 type="button"
                 onClick={() => setIsCreateOpen(false)}
                 className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -737,8 +802,9 @@ export const AudiencesPage: React.FC = () => {
 
             <form onSubmit={handleSaveCreate} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Segment Name *</label>
+                <label htmlFor="create-seg-name" className="block font-medium text-[#1E1B4B] mb-1">Segment Name *</label>
                 <input
+                  id="create-seg-name"
                   type="text"
                   required
                   placeholder="e.g. Rabat VIP Shoppers"
@@ -749,8 +815,9 @@ export const AudiencesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="create-seg-desc" className="block font-medium text-[#1E1B4B] mb-1">Description</label>
                 <input
+                  id="create-seg-desc"
                   type="text"
                   placeholder="e.g. High net worth shoppers in modern retail stores"
                   value={formData.description}
@@ -761,29 +828,23 @@ export const AudiencesPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Region / Cities</label>
+                  <label htmlFor="create-seg-region" className="block font-medium text-[#1E1B4B] mb-1">Region</label>
                   <input
+                    id="create-seg-region"
                     type="text"
                     value={formData.region}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        region: e.target.value,
-                        cityCondition: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Customer Type</label>
+                  <label htmlFor="create-seg-type" className="block font-medium text-[#1E1B4B] mb-1">Customer Type</label>
                   <select
+                    id="create-seg-type"
                     value={formData.customerType}
-                    onChange={(e) =>
-                      setFormData({ ...formData, customerType: e.target.value as CustomerType })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                    onChange={(e) => setFormData({ ...formData, customerType: e.target.value as CustomerType })}
+                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] bg-white focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
                   >
                     <option value="Prospects">Prospects</option>
                     <option value="Existing customers">Existing customers</option>
@@ -794,10 +855,10 @@ export const AudiencesPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Age Range</label>
+                  <label htmlFor="create-seg-age" className="block font-medium text-[#1E1B4B] mb-1">Age Range</label>
                   <input
+                    id="create-seg-age"
                     type="text"
-                    placeholder="e.g. 25–45"
                     value={formData.ageRange}
                     onChange={(e) => setFormData({ ...formData, ageRange: e.target.value })}
                     className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
@@ -805,43 +866,21 @@ export const AudiencesPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Estimated Contacts</label>
+                  <label htmlFor="create-seg-contacts" className="block font-medium text-[#1E1B4B] mb-1">Initial Contact Count</label>
                   <input
+                    id="create-seg-contacts"
                     type="number"
                     value={formData.contactCount}
-                    onChange={(e) =>
-                      setFormData({ ...formData, contactCount: Number(e.target.value) })
-                    }
+                    onChange={(e) => setFormData({ ...formData, contactCount: Number(e.target.value) })}
                     className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Interests</label>
+                <label htmlFor="create-seg-campaigns" className="block font-medium text-[#1E1B4B] mb-1">Associated Campaigns (comma separated)</label>
                 <input
-                  type="text"
-                  value={formData.interests}
-                  onChange={(e) => setFormData({ ...formData, interests: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Acquisition Source</label>
-                <input
-                  type="text"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">
-                  Associated Campaigns (comma separated)
-                </label>
-                <input
+                  id="create-seg-campaigns"
                   type="text"
                   value={formData.associatedCampaigns}
                   onChange={(e) => setFormData({ ...formData, associatedCampaigns: e.target.value })}
@@ -849,17 +888,71 @@ export const AudiencesPage: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#F1F5F9]">
+              {/* Conditions Sub-section */}
+              <div className="p-3 rounded-lg border border-[#F1F5F9] bg-[#F8F7FC] space-y-3">
+                <span className="font-bold text-[#1E1B4B] block text-[11px] uppercase tracking-wide">
+                  Detailed Filter Conditions
+                </span>
+
+                <div>
+                  <label htmlFor="create-seg-city" className="block text-[#64748B] mb-0.5">Target Cities</label>
+                  <input
+                    id="create-seg-city"
+                    type="text"
+                    value={formData.cityCondition}
+                    onChange={(e) => setFormData({ ...formData, cityCondition: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="create-seg-interests" className="block text-[#64748B] mb-0.5">Key Interests</label>
+                  <input
+                    id="create-seg-interests"
+                    type="text"
+                    value={formData.interests}
+                    onChange={(e) => setFormData({ ...formData, interests: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="create-seg-source" className="block text-[#64748B] mb-0.5">Acquisition Source</label>
+                  <input
+                    id="create-seg-source"
+                    type="text"
+                    value={formData.source}
+                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="create-seg-status" className="block text-[#64748B] mb-0.5">Segment Status</label>
+                  <select
+                    id="create-seg-status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Archived">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E2E8F0]">
                 <button
                   type="button"
                   onClick={() => setIsCreateOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 text-xs font-medium"
+                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[#6D28D9] text-white hover:bg-[#5B21B6] text-xs font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white font-semibold shadow-xs"
                 >
                   Create Segment
                 </button>
@@ -871,14 +964,15 @@ export const AudiencesPage: React.FC = () => {
 
       {/* EDIT SEGMENT MODAL */}
       {isEditOpen && selectedSegment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4" role="dialog" aria-modal="true" aria-labelledby="edit-segment-modal-title">
+          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Edit Segment Details</h3>
+              <h3 id="edit-segment-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit Audience Segment</h3>
               <button
                 type="button"
                 onClick={() => setIsEditOpen(false)}
                 className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -886,8 +980,9 @@ export const AudiencesPage: React.FC = () => {
 
             <form onSubmit={handleSaveEdit} className="p-6 space-y-4 text-xs">
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Segment Name</label>
+                <label htmlFor="edit-seg-name" className="block font-medium text-[#1E1B4B] mb-1">Segment Name *</label>
                 <input
+                  id="edit-seg-name"
                   type="text"
                   required
                   value={formData.name}
@@ -897,8 +992,9 @@ export const AudiencesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="edit-seg-desc" className="block font-medium text-[#1E1B4B] mb-1">Description</label>
                 <input
+                  id="edit-seg-desc"
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -908,29 +1004,23 @@ export const AudiencesPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">City / Region Filter</label>
+                  <label htmlFor="edit-seg-region" className="block font-medium text-[#1E1B4B] mb-1">Region</label>
                   <input
+                    id="edit-seg-region"
                     type="text"
-                    value={formData.cityCondition}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        cityCondition: e.target.value,
-                        region: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                    value={formData.region}
+                    onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Customer Type</label>
+                  <label htmlFor="edit-seg-type" className="block font-medium text-[#1E1B4B] mb-1">Customer Type</label>
                   <select
+                    id="edit-seg-type"
                     value={formData.customerType}
-                    onChange={(e) =>
-                      setFormData({ ...formData, customerType: e.target.value as CustomerType })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                    onChange={(e) => setFormData({ ...formData, customerType: e.target.value as CustomerType })}
+                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] bg-white focus:outline-none"
                   >
                     <option value="Prospects">Prospects</option>
                     <option value="Existing customers">Existing customers</option>
@@ -941,59 +1031,103 @@ export const AudiencesPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Age Range</label>
+                  <label htmlFor="edit-seg-age" className="block font-medium text-[#1E1B4B] mb-1">Age Range</label>
                   <input
+                    id="edit-seg-age"
                     type="text"
                     value={formData.ageRange}
                     onChange={(e) => setFormData({ ...formData, ageRange: e.target.value })}
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-medium text-[#1E1B4B] mb-1">Contacts</label>
+                  <label htmlFor="edit-seg-contacts" className="block font-medium text-[#1E1B4B] mb-1">Contact Count</label>
                   <input
+                    id="edit-seg-contacts"
                     type="number"
                     value={formData.contactCount}
-                    onChange={(e) =>
-                      setFormData({ ...formData, contactCount: Number(e.target.value) })
-                    }
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                    onChange={(e) => setFormData({ ...formData, contactCount: Number(e.target.value) })}
+                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Interests</label>
+                <label htmlFor="edit-seg-campaigns" className="block font-medium text-[#1E1B4B] mb-1">Associated Campaigns (comma separated)</label>
                 <input
+                  id="edit-seg-campaigns"
                   type="text"
-                  value={formData.interests}
-                  onChange={(e) => setFormData({ ...formData, interests: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
+                  value={formData.associatedCampaigns}
+                  onChange={(e) => setFormData({ ...formData, associatedCampaigns: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none"
                 />
               </div>
 
-              <div>
-                <label className="block font-medium text-[#1E1B4B] mb-1">Acquisition Source</label>
-                <input
-                  type="text"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-xs text-[#1E1B4B] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9]"
-                />
+              <div className="p-3 rounded-lg border border-[#F1F5F9] bg-[#F8F7FC] space-y-3">
+                <span className="font-bold text-[#1E1B4B] block text-[11px] uppercase tracking-wide">
+                  Detailed Filter Conditions
+                </span>
+
+                <div>
+                  <label htmlFor="edit-seg-city" className="block text-[#64748B] mb-0.5">Target Cities</label>
+                  <input
+                    id="edit-seg-city"
+                    type="text"
+                    value={formData.cityCondition}
+                    onChange={(e) => setFormData({ ...formData, cityCondition: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-seg-interests" className="block text-[#64748B] mb-0.5">Key Interests</label>
+                  <input
+                    id="edit-seg-interests"
+                    type="text"
+                    value={formData.interests}
+                    onChange={(e) => setFormData({ ...formData, interests: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-seg-source" className="block text-[#64748B] mb-0.5">Acquisition Source</label>
+                  <input
+                    id="edit-seg-source"
+                    type="text"
+                    value={formData.source}
+                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="edit-seg-status" className="block text-[#64748B] mb-0.5">Segment Status</label>
+                  <select
+                    id="edit-seg-status"
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                    className="w-full px-2.5 py-1.5 rounded border border-[#E2E8F0] text-xs bg-white focus:outline-none"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                    <option value="Archived">Archived</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#F1F5F9]">
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#E2E8F0]">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 text-xs font-medium"
+                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[#6D28D9] text-white hover:bg-[#5B21B6] text-xs font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white font-semibold shadow-xs"
                 >
                   Save Changes
                 </button>
@@ -1005,29 +1139,30 @@ export const AudiencesPage: React.FC = () => {
 
       {/* USE IN CAMPAIGN MODAL */}
       {isUseInCampaignOpen && selectedSegment && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Use Segment in Campaign</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-2xs p-4" role="dialog" aria-modal="true" aria-labelledby="use-campaign-modal-title">
+          <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-2xl w-full max-w-md p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+              <h3 id="use-campaign-modal-title" className="text-base font-bold text-[#1E1B4B]">Attach Segment to Campaign</h3>
               <button
                 type="button"
                 onClick={() => setIsUseInCampaignOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-[#64748B] mb-4">
-              Attach <strong>{selectedSegment.name}</strong> ({selectedSegment.contactCount.toLocaleString()} contacts) to an upcoming or active campaign:
+            <p className="text-xs text-[#64748B]">
+              Connect <span className="font-semibold text-[#1E1B4B]">{selectedSegment.name}</span> to active or draft marketing campaigns:
             </p>
 
-            <div className="space-y-2 mb-6">
+            <div className="space-y-2">
               {[
                 'Autumn Launch 2026',
-                'Retargeting Boost',
-                'Holiday Season Push',
-                'Brand Awareness Q4',
+                'October Retargeting',
+                'Summer Clearance',
+                'Spring Collection 2027',
               ].map((camp) => {
                 const isAlreadyLinked = selectedSegment.associatedCampaigns.includes(camp);
                 return (
@@ -1046,7 +1181,24 @@ export const AudiencesPage: React.FC = () => {
                         setSegments((prev) =>
                           prev.map((s) => (s.id === updated.id ? updated : s))
                         );
-                        showToast(`Attached to "${camp}"`);
+                        showToast(`Attached to ${camp}`);
+                      } else {
+                        const updated = {
+                          ...selectedSegment,
+                          associatedCampaigns: selectedSegment.associatedCampaigns.filter(
+                            (c) => c !== camp
+                          ),
+                          moduleConnections: {
+                            ...selectedSegment.moduleConnections,
+                            campaigns: selectedSegment.moduleConnections.campaigns.filter(
+                              (c) => c !== camp
+                            ),
+                          },
+                        };
+                        setSegments((prev) =>
+                          prev.map((s) => (s.id === updated.id ? updated : s))
+                        );
+                        showToast(`Detached from ${camp}`);
                       }
                       setIsUseInCampaignOpen(false);
                     }}
@@ -1067,7 +1219,7 @@ export const AudiencesPage: React.FC = () => {
               })}
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setIsUseInCampaignOpen(false)}
@@ -1079,6 +1231,38 @@ export const AudiencesPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deleteConfirmSegId && (
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-seg-modal-title" aria-describedby="delete-seg-modal-desc">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-sm p-6 text-center animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h4 id="delete-seg-modal-title" className="text-base font-bold text-[#1E1B4B]">Delete Audience Segment?</h4>
+            <p id="delete-seg-modal-desc" className="text-xs text-[#64748B] mt-1.5">
+              Are you sure you want to delete this segment? This action cannot be undone.
+            </p>
+            <div className="mt-5 flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmSegId(null)}
+                className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteSegment(deleteConfirmSegId)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-2xs"
+              >
+                Delete Segment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

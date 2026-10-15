@@ -52,6 +52,18 @@ export const MarketingStrategiesPage: React.FC = () => {
     completionCircumference -
     (strategy.completionPercentage / 100) * completionCircumference;
 
+  // Escape key handler for active modals
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isCreateStrategyModalOpen) setIsCreateStrategyModalOpen(false);
+        else if (isAddInitiativeModalOpen) setIsAddInitiativeModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCreateStrategyModalOpen, isAddInitiativeModalOpen]);
+
   const handleAddInitiative = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newInitName.trim()) return;
@@ -564,6 +576,13 @@ export const MarketingStrategiesPage: React.FC = () => {
                     <td className="py-3.5 text-[#64748B]">{init.nextStep}</td>
                   </tr>
                 ))}
+                {strategy.initiatives.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-xs text-[#94A3B8]">
+                      No strategic initiatives added yet. Click "Add initiative" above to record one.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -649,24 +668,26 @@ export const MarketingStrategiesPage: React.FC = () => {
 
       {/* --- CREATE STRATEGY MODAL --- */}
       {isCreateStrategyModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="create-strategy-modal-title">
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
-              <h3 className="text-lg font-bold text-[#1E1B4B]">Create Strategy</h3>
+              <h3 id="create-strategy-modal-title" className="text-lg font-bold text-[#1E1B4B]">Create Strategy</h3>
               <button
                 type="button"
                 onClick={() => setIsCreateStrategyModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleCreateStrategy} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                  Strategy Title
+                <label htmlFor="create-strat-title" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  Strategy Title *
                 </label>
                 <input
+                  id="create-strat-title"
                   type="text"
                   placeholder="e.g. Winter Customer Acquisition Strategy"
                   value={createTitle}
@@ -676,10 +697,11 @@ export const MarketingStrategiesPage: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="create-strat-desc" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Overview Description
                 </label>
                 <textarea
+                  id="create-strat-desc"
                   rows={4}
                   placeholder="Describe your strategy objectives and execution plan..."
                   value={createDesc}
@@ -687,17 +709,17 @@ export const MarketingStrategiesPage: React.FC = () => {
                   className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none"
                 />
               </div>
-              <div className="flex items-center justify-end gap-3 pt-3">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F1F5F9]">
                 <button
                   type="button"
                   onClick={() => setIsCreateStrategyModalOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-slate-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs transition-colors"
                 >
                   Save Strategy
                 </button>
@@ -709,24 +731,26 @@ export const MarketingStrategiesPage: React.FC = () => {
 
       {/* --- ADD INITIATIVE MODAL --- */}
       {isAddInitiativeModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="add-initiative-modal-title">
           <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xl w-full max-w-lg p-6 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0]">
-              <h3 className="text-lg font-bold text-[#1E1B4B]">Add Strategic Initiative</h3>
+              <h3 id="add-initiative-modal-title" className="text-lg font-bold text-[#1E1B4B]">Add Strategic Initiative</h3>
               <button
                 type="button"
                 onClick={() => setIsAddInitiativeModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleAddInitiative} className="space-y-4 pt-4">
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                  Initiative Name
+                <label htmlFor="init-name" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                  Initiative Name *
                 </label>
                 <input
+                  id="init-name"
                   type="text"
                   placeholder="e.g. Email sequence A/B testing"
                   value={newInitName}
@@ -736,13 +760,14 @@ export const MarketingStrategiesPage: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="init-area" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Related Area
                 </label>
                 <select
+                  id="init-area"
                   value={newInitArea}
                   onChange={(e) => setNewInitArea(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none bg-white"
                 >
                   <option value="Positioning">Positioning</option>
                   <option value="Audiences">Audiences</option>
@@ -751,13 +776,14 @@ export const MarketingStrategiesPage: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="init-owner" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Owner
                 </label>
                 <select
+                  id="init-owner"
                   value={newInitOwner}
                   onChange={(e) => setNewInitOwner(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none bg-white"
                 >
                   <option value="Sara El Amrani">Sara El Amrani</option>
                   <option value="Yassine Bouchra">Yassine Bouchra</option>
@@ -766,10 +792,11 @@ export const MarketingStrategiesPage: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
+                <label htmlFor="init-nextstep" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Next Step
                 </label>
                 <input
+                  id="init-nextstep"
                   type="text"
                   placeholder="e.g. Prepare variation copy"
                   value={newInitNextStep}
@@ -777,17 +804,17 @@ export const MarketingStrategiesPage: React.FC = () => {
                   className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-[#1E1B4B] focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] outline-none"
                 />
               </div>
-              <div className="flex items-center justify-end gap-3 pt-3">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#F1F5F9]">
                 <button
                   type="button"
                   onClick={() => setIsAddInitiativeModalOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-slate-50"
+                  className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-[#64748B] hover:bg-slate-50 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold"
+                  className="px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs transition-colors"
                 >
                   Add Initiative
                 </button>
@@ -796,6 +823,7 @@ export const MarketingStrategiesPage: React.FC = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };

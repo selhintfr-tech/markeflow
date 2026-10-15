@@ -95,6 +95,22 @@ export const CrmLeadsPage: React.FC = () => {
     type: 'call' as 'call' | 'email' | 'meeting' | 'note',
   });
 
+  // Escape key handler for all active modals
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (deleteConfirmId) setDeleteConfirmId(null);
+        else if (isAddModalOpen) setIsAddModalOpen(false);
+        else if (isEditModalOpen) setIsEditModalOpen(false);
+        else if (isAddActivityModalOpen) setIsAddActivityModalOpen(false);
+        else if (isImportModalOpen) setIsImportModalOpen(false);
+        else if (menuOpenLeadId) setMenuOpenLeadId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [deleteConfirmId, isAddModalOpen, isEditModalOpen, isAddActivityModalOpen, isImportModalOpen, menuOpenLeadId]);
+
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
@@ -106,57 +122,46 @@ export const CrmLeadsPage: React.FC = () => {
   }, [leads, selectedLeadId]);
 
   // Derived KPI & Funnel Stats
-  const dynamicFunnelStages = useMemo(() => {
-    // We preserve the reference snapshot counts while adjusting for added/removed leads
-    const stages: CRMFunnelStage[] = [
-      {
-        status: 'New',
-        label: 'New',
-        count: initialFunnelStages[0].count,
-        color: '#EDE9FE',
-        dotColor: '#6D28D9',
-      },
-      {
-        status: 'Contacted',
-        label: 'Contacted',
-        count: initialFunnelStages[1].count,
-        color: '#E0F2FE',
-        dotColor: '#0284C7',
-      },
-      {
-        status: 'Qualified',
-        label: 'Qualified',
-        count: initialFunnelStages[2].count,
-        color: '#FEF3C7',
-        dotColor: '#D97706',
-      },
-      {
-        status: 'Converted',
-        label: 'Converted',
-        count: initialFunnelStages[3].count,
-        color: '#CCFBF1',
-        dotColor: '#0D9488',
-      },
-    ];
+  const dynamicFunnelStages = useMemo<CRMFunnelStage[]>(() => {
+    const initialStatusCounts: Record<CRMLeadStatus, number> = {
+      New: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'New').length,
+      Contacted: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Contacted').length,
+      Qualified: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Qualified').length,
+      Converted: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Converted').length,
+    };
 
-    // Recalculate if user adds leads
-    const extraLeads = leads.length - initialCrmLeads.length;
-    if (extraLeads !== 0) {
-      // derive exact status count difference
-      const newStatusCounts: Record<CRMLeadStatus, number> = {
-        New: leads.filter((l: CRMLead) => l.leadStatus === 'New').length,
-        Contacted: leads.filter((l: CRMLead) => l.leadStatus === 'Contacted').length,
-        Qualified: leads.filter((l: CRMLead) => l.leadStatus === 'Qualified').length,
-        Converted: leads.filter((l: CRMLead) => l.leadStatus === 'Converted').length,
+    const currentStatusCounts: Record<CRMLeadStatus, number> = {
+      New: leads.filter((l: CRMLead) => l.leadStatus === 'New').length,
+      Contacted: leads.filter((l: CRMLead) => l.leadStatus === 'Contacted').length,
+      Qualified: leads.filter((l: CRMLead) => l.leadStatus === 'Qualified').length,
+      Converted: leads.filter((l: CRMLead) => l.leadStatus === 'Converted').length,
+    };
+
+    return initialFunnelStages.map((stage) => {
+      const delta = (currentStatusCounts[stage.status] || 0) - (initialStatusCounts[stage.status] || 0);
+      return {
+        ...stage,
+        count: Math.max(0, stage.count + delta),
       };
-      return stages.map((st) => ({
-        ...st,
-        count: (initialFunnelStages.find((s: CRMFunnelStage) => s.status === st.status)?.count || 0) +
-          (newStatusCounts[st.status] - initialCrmLeads.filter((l: CRMLead) => l.leadStatus === st.status).length),
-      }));
-    }
+    });
+  }, [leads]);
 
-    return stages;
+  // Dynamic KPI counts based on live CRM state
+  const dynamicKpis = useMemo(() => {
+    const leadDelta = leads.length - initialCrmLeads.length;
+    const initialConverted = initialCrmLeads.filter((l) => l.leadStatus === 'Converted').length;
+    const currentConverted = leads.filter((l) => l.leadStatus === 'Converted').length;
+    const convertedDelta = currentConverted - initialConverted;
+
+    const totalVal = Math.max(0, crmKpiStats.totalLeads.value + leadDelta);
+    const convertedVal = Math.max(0, crmKpiStats.convertedCustomers.value + convertedDelta);
+    const rateVal = totalVal > 0 ? ((convertedVal / totalVal) * 100).toFixed(1) + '%' : '0.0%';
+
+    return {
+      totalLeads: totalVal,
+      convertedCustomers: convertedVal,
+      conversionRate: rateVal,
+    };
   }, [leads]);
 
   // Filtered & Sorted Leads
@@ -637,7 +642,7 @@ export const CrmLeadsPage: React.FC = () => {
               {crmKpiStats.totalLeads.label}
             </div>
             <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {crmKpiStats.totalLeads.value}
+              {dynamicKpis.totalLeads}
             </div>
             <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
               <TrendingUp className="w-3.5 h-3.5" />
@@ -659,7 +664,7 @@ export const CrmLeadsPage: React.FC = () => {
               {crmKpiStats.convertedCustomers.label}
             </div>
             <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {crmKpiStats.convertedCustomers.value}
+              {dynamicKpis.convertedCustomers}
             </div>
             <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
               <TrendingUp className="w-3.5 h-3.5" />
@@ -681,7 +686,7 @@ export const CrmLeadsPage: React.FC = () => {
               {crmKpiStats.conversionRate.label}
             </div>
             <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {crmKpiStats.conversionRate.value}
+              {dynamicKpis.conversionRate}
             </div>
             <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
               <TrendingUp className="w-3.5 h-3.5" />
@@ -769,9 +774,11 @@ export const CrmLeadsPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2.5">
               {/* Search input */}
               <div className="relative flex-1 min-w-[200px]">
-                <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
                 <input
                   type="text"
+                  id="crm-search-input"
+                  aria-label="Search leads, companies, or emails"
                   placeholder="Search leads, companies, or emails..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -782,53 +789,61 @@ export const CrmLeadsPage: React.FC = () => {
               {/* Status dropdown */}
               <div className="relative">
                 <select
+                  id="crm-status-filter"
+                  aria-label="Filter by lead status"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                   className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
                 >
-                  <option value="All">Status</option>
+                  <option value="All">Status (All)</option>
                   <option value="New">New</option>
                   <option value="Contacted">Contacted</option>
                   <option value="Qualified">Qualified</option>
                   <option value="Converted">Converted</option>
                 </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
               </div>
 
               {/* Campaign dropdown */}
               <div className="relative">
                 <select
+                  id="crm-campaign-filter"
+                  aria-label="Filter by source campaign"
                   value={campaignFilter}
                   onChange={(e) => setCampaignFilter(e.target.value)}
                   className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
                 >
-                  <option value="All">Campaign</option>
+                  <option value="All">Campaign (All)</option>
                   <option value="Autumn Launch 2026">Autumn Launch 2026</option>
                   <option value="October Retargeting">October Retargeting</option>
                   <option value="Summer Clearance">Summer Clearance</option>
                 </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
               </div>
 
               {/* Assignee dropdown */}
               <div className="relative">
                 <select
+                  id="crm-assignee-filter"
+                  aria-label="Filter by assignee"
                   value={assigneeFilter}
                   onChange={(e) => setAssigneeFilter(e.target.value)}
                   className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
                 >
-                  <option value="All">Assignee</option>
+                  <option value="All">Assignee (All)</option>
                   <option value="Sara El Amrani">Sara El Amrani</option>
                   <option value="Imane Benkirane">Imane Benkirane</option>
                   <option value="Yassine Bouchra">Yassine Bouchra</option>
                   <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
                 </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
               </div>
 
               {/* Sort dropdown */}
               <div className="relative">
                 <select
+                  id="crm-sort-option"
+                  aria-label="Sort leads list"
                   value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as any)}
                   className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
@@ -838,8 +853,24 @@ export const CrmLeadsPage: React.FC = () => {
                   <option value="name">Sort by: Name</option>
                   <option value="company">Sort by: Company</option>
                 </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
               </div>
+
+              {/* Reset filter button if any active */}
+              {(searchQuery || statusFilter !== 'All' || campaignFilter !== 'All' || assigneeFilter !== 'All') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('All');
+                    setCampaignFilter('All');
+                    setAssigneeFilter('All');
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#6D28D9] hover:bg-[#EDE9FE] transition-colors"
+                >
+                  Reset filters
+                </button>
+              )}
             </div>
           </div>
 
@@ -851,6 +882,15 @@ export const CrmLeadsPage: React.FC = () => {
                   <th className="py-2.5 px-3 w-8">
                     <input
                       type="checkbox"
+                      id="crm-select-all"
+                      aria-label="Select all leads"
+                      checked={filteredLeads.length > 0 && filteredLeads.every((l) => l.id === selectedLeadId)}
+                      onChange={() => {
+                        if (filteredLeads.length > 0) {
+                          setSelectedLeadId(filteredLeads[0].id);
+                          setIsDetailPanelOpen(true);
+                        }
+                      }}
                       className="rounded border-[#CBD5E1] text-[#6D28D9] focus:ring-0 cursor-pointer"
                     />
                   </th>
@@ -868,8 +908,42 @@ export const CrmLeadsPage: React.FC = () => {
               <tbody className="divide-y divide-[#F1F5F9] text-xs">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="py-10 text-center text-[#64748B]">
-                      No leads found matching your criteria.
+                    <td colSpan={10} className="py-12 text-center">
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                        <div className="w-10 h-10 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center mb-3">
+                          <Users className="w-5 h-5" />
+                        </div>
+                        <h4 className="text-sm font-bold text-[#1E1B4B]">No leads found</h4>
+                        <p className="text-xs text-[#64748B] mt-1">
+                          {leads.length === 0
+                            ? 'No CRM leads exist yet. Click "Add Lead" or import a CSV file to get started.'
+                            : 'No leads match your current search and filter criteria.'}
+                        </p>
+                        <div className="mt-4 flex items-center gap-2">
+                          {(searchQuery || statusFilter !== 'All' || campaignFilter !== 'All' || assigneeFilter !== 'All') ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSearchQuery('');
+                                setStatusFilter('All');
+                                if (campaignFilter !== 'All') setCampaignFilter('All');
+                                if (assigneeFilter !== 'All') setAssigneeFilter('All');
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE] transition-colors"
+                            >
+                              Clear filters
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleOpenAdd}
+                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#6D28D9] text-white hover:bg-[#5B21B6] transition-colors"
+                            >
+                              Add New Lead
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -995,7 +1069,7 @@ export const CrmLeadsPage: React.FC = () => {
           {/* Table Footer with Pagination */}
           <div className="p-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#64748B]">
             <div>
-              Showing 1–{filteredLeads.length} of {filteredLeads.length} leads
+              Showing {filteredLeads.length === 0 ? 0 : 1}–{filteredLeads.length} of {filteredLeads.length} leads
             </div>
 
             <div className="flex items-center gap-1.5">
@@ -1037,16 +1111,18 @@ export const CrmLeadsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleOpenEdit(selectedLead)}
-                  className="p-1 rounded-md text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100"
+                  className="p-1.5 rounded-md text-[#6D28D9] hover:bg-[#EDE9FE] transition-colors"
                   title="Edit Lead"
+                  aria-label="Edit lead"
                 >
-                  <MoreHorizontal className="w-4 h-4" />
+                  <Pencil className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => setIsDetailPanelOpen(false)}
-                  className="p-1 rounded-md text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100"
+                  className="p-1.5 rounded-md text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
                   title="Close Detail Panel"
+                  aria-label="Close detail panel"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1217,14 +1293,15 @@ export const CrmLeadsPage: React.FC = () => {
 
       {/* Add Lead Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-lead-modal-title">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Add New Lead</h3>
+              <h3 id="add-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Add New Lead</h3>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1232,7 +1309,7 @@ export const CrmLeadsPage: React.FC = () => {
 
             <form onSubmit={handleSaveAdd} className="p-6 space-y-4">
               {formError && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2" role="alert">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{formError}</span>
                 </div>
@@ -1240,8 +1317,9 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name</label>
+                  <label htmlFor="add-lead-name" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name *</label>
                   <input
+                    id="add-lead-name"
                     type="text"
                     value={leadFormData.name}
                     onChange={(e) => setLeadFormData({ ...leadFormData, name: e.target.value })}
@@ -1252,8 +1330,9 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Company</label>
+                  <label htmlFor="add-lead-company" className="block text-xs font-semibold text-[#64748B] mb-1">Company *</label>
                   <input
+                    id="add-lead-company"
                     type="text"
                     value={leadFormData.company}
                     onChange={(e) => setLeadFormData({ ...leadFormData, company: e.target.value })}
@@ -1266,24 +1345,26 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Email</label>
+                  <label htmlFor="add-lead-email" className="block text-xs font-semibold text-[#64748B] mb-1">Email *</label>
                   <input
+                    id="add-lead-email"
                     type="email"
                     value={leadFormData.email}
                     onChange={(e) => setLeadFormData({ ...leadFormData, email: e.target.value })}
-                    placeholder="e.g. amina@casaretail.ma"
+                    placeholder="name@company.ma"
                     className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
+                  <label htmlFor="add-lead-phone" className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
                   <input
+                    id="add-lead-phone"
                     type="text"
                     value={leadFormData.phone}
                     onChange={(e) => setLeadFormData({ ...leadFormData, phone: e.target.value })}
-                    placeholder="e.g. +212 6 61 24 88 31"
+                    placeholder="+212 6..."
                     className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
                   />
                 </div>
@@ -1291,11 +1372,40 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Status</label>
+                  <label htmlFor="add-lead-source-campaign" className="block text-xs font-semibold text-[#64748B] mb-1">Source Campaign</label>
                   <select
+                    id="add-lead-source-campaign"
+                    value={leadFormData.sourceCampaign}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, sourceCampaign: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
+                  >
+                    <option value="Autumn Launch 2026">Autumn Launch 2026</option>
+                    <option value="October Retargeting">October Retargeting</option>
+                    <option value="Summer Clearance">Summer Clearance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="add-lead-related-project" className="block text-xs font-semibold text-[#64748B] mb-1">Related Project</label>
+                  <input
+                    id="add-lead-related-project"
+                    type="text"
+                    value={leadFormData.relatedProject}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, relatedProject: e.target.value })}
+                    placeholder="Project name"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="add-lead-status" className="block text-xs font-semibold text-[#64748B] mb-1">Status</label>
+                  <select
+                    id="add-lead-status"
                     value={leadFormData.leadStatus}
                     onChange={(e) => setLeadFormData({ ...leadFormData, leadStatus: e.target.value as CRMLeadStatus })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
                   >
                     <option value="New">New</option>
                     <option value="Contacted">Contacted</option>
@@ -1305,69 +1415,85 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
+                  <label htmlFor="add-lead-assignee" className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
                   <select
+                    id="add-lead-assignee"
                     value={leadFormData.assignedToName}
                     onChange={(e) => {
                       const name = e.target.value;
-                      const initials =
-                        name === 'Sara El Amrani'
-                          ? 'SE'
-                          : name === 'Imane Benkirane'
-                          ? 'IB'
-                          : name === 'Yassine Bouchra'
-                          ? 'YB'
-                          : 'MZ';
-                      setLeadFormData({ ...leadFormData, assignedToName: name, assignedToInitials: initials });
+                      const initials = name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase();
+                      setLeadFormData({
+                        ...leadFormData,
+                        assignedToName: name,
+                        assignedToInitials: initials,
+                      });
                     }}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
                   >
-                    <option value="Sara El Amrani">Sara El Amrani (SE)</option>
-                    <option value="Imane Benkirane">Imane Benkirane (IB)</option>
-                    <option value="Yassine Bouchra">Yassine Bouchra (YB)</option>
-                    <option value="Mehdi Zahraoui">Mehdi Zahraoui (MZ)</option>
+                    <option value="Sara El Amrani">Sara El Amrani</option>
+                    <option value="Imane Benkirane">Imane Benkirane</option>
+                    <option value="Yassine Bouchra">Yassine Bouchra</option>
+                    <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Source Campaign</label>
+                  <label htmlFor="add-lead-contact" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Method</label>
                   <select
-                    value={leadFormData.sourceCampaign}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, sourceCampaign: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    id="add-lead-contact"
+                    value={leadFormData.preferredContact}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, preferredContact: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
                   >
-                    <option value="Autumn Launch 2026">Autumn Launch 2026</option>
-                    <option value="October Retargeting">October Retargeting</option>
-                    <option value="Summer Clearance">Summer Clearance</option>
+                    <option value="Email">Email</option>
+                    <option value="Phone">Phone</option>
+                    <option value="In-person">In-person</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-up</label>
+                  <label htmlFor="add-lead-location" className="block text-xs font-semibold text-[#64748B] mb-1">Location</label>
                   <input
+                    id="add-lead-location"
                     type="text"
-                    value={leadFormData.nextFollowUp}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
-                    placeholder="e.g. 18 Oct 2026, 11:00 AM"
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    value={leadFormData.location}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, location: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
-                <textarea
-                  rows={2}
-                  value={leadFormData.internalNotes}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
-                  placeholder="Notes about lead requirements, conversation points..."
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                <label htmlFor="add-lead-followup" className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-Up</label>
+                <input
+                  id="add-lead-followup"
+                  type="text"
+                  value={leadFormData.nextFollowUp}
+                  onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
                 />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E2E8F0]">
+              <div>
+                <label htmlFor="add-lead-notes" className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
+                <textarea
+                  id="add-lead-notes"
+                  rows={2}
+                  value={leadFormData.internalNotes}
+                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
+                  placeholder="Additional context or requirement details..."
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
@@ -1389,14 +1515,15 @@ export const CrmLeadsPage: React.FC = () => {
 
       {/* Edit Lead Modal */}
       {isEditModalOpen && selectedLead && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-lead-modal-title">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Edit Lead</h3>
+              <h3 id="edit-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit Lead Details</h3>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1404,7 +1531,7 @@ export const CrmLeadsPage: React.FC = () => {
 
             <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
               {formError && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2" role="alert">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{formError}</span>
                 </div>
@@ -1412,8 +1539,9 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name</label>
+                  <label htmlFor="edit-lead-name" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name *</label>
                   <input
+                    id="edit-lead-name"
                     type="text"
                     value={leadFormData.name}
                     onChange={(e) => setLeadFormData({ ...leadFormData, name: e.target.value })}
@@ -1423,8 +1551,9 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Company</label>
+                  <label htmlFor="edit-lead-company" className="block text-xs font-semibold text-[#64748B] mb-1">Company *</label>
                   <input
+                    id="edit-lead-company"
                     type="text"
                     value={leadFormData.company}
                     onChange={(e) => setLeadFormData({ ...leadFormData, company: e.target.value })}
@@ -1436,8 +1565,9 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Email</label>
+                  <label htmlFor="edit-lead-email" className="block text-xs font-semibold text-[#64748B] mb-1">Email *</label>
                   <input
+                    id="edit-lead-email"
                     type="email"
                     value={leadFormData.email}
                     onChange={(e) => setLeadFormData({ ...leadFormData, email: e.target.value })}
@@ -1447,8 +1577,9 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
+                  <label htmlFor="edit-lead-phone" className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
                   <input
+                    id="edit-lead-phone"
                     type="text"
                     value={leadFormData.phone}
                     onChange={(e) => setLeadFormData({ ...leadFormData, phone: e.target.value })}
@@ -1459,11 +1590,39 @@ export const CrmLeadsPage: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Lead Status</label>
+                  <label htmlFor="edit-lead-source-campaign" className="block text-xs font-semibold text-[#64748B] mb-1">Source Campaign</label>
                   <select
+                    id="edit-lead-source-campaign"
+                    value={leadFormData.sourceCampaign}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, sourceCampaign: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
+                  >
+                    <option value="Autumn Launch 2026">Autumn Launch 2026</option>
+                    <option value="October Retargeting">October Retargeting</option>
+                    <option value="Summer Clearance">Summer Clearance</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-lead-related-project" className="block text-xs font-semibold text-[#64748B] mb-1">Related Project</label>
+                  <input
+                    id="edit-lead-related-project"
+                    type="text"
+                    value={leadFormData.relatedProject}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, relatedProject: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="edit-lead-status" className="block text-xs font-semibold text-[#64748B] mb-1">Status</label>
+                  <select
+                    id="edit-lead-status"
                     value={leadFormData.leadStatus}
                     onChange={(e) => setLeadFormData({ ...leadFormData, leadStatus: e.target.value as CRMLeadStatus })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
                   >
                     <option value="New">New</option>
                     <option value="Contacted">Contacted</option>
@@ -1473,64 +1632,84 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
+                  <label htmlFor="edit-lead-assignee" className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
                   <select
+                    id="edit-lead-assignee"
                     value={leadFormData.assignedToName}
                     onChange={(e) => {
                       const name = e.target.value;
-                      const initials =
-                        name === 'Sara El Amrani'
-                          ? 'SE'
-                          : name === 'Imane Benkirane'
-                          ? 'IB'
-                          : name === 'Yassine Bouchra'
-                          ? 'YB'
-                          : 'MZ';
-                      setLeadFormData({ ...leadFormData, assignedToName: name, assignedToInitials: initials });
+                      const initials = name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase();
+                      setLeadFormData({
+                        ...leadFormData,
+                        assignedToName: name,
+                        assignedToInitials: initials,
+                      });
                     }}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
                   >
-                    <option value="Sara El Amrani">Sara El Amrani (SE)</option>
-                    <option value="Imane Benkirane">Imane Benkirane (IB)</option>
-                    <option value="Yassine Bouchra">Yassine Bouchra (YB)</option>
-                    <option value="Mehdi Zahraoui">Mehdi Zahraoui (MZ)</option>
+                    <option value="Sara El Amrani">Sara El Amrani</option>
+                    <option value="Imane Benkirane">Imane Benkirane</option>
+                    <option value="Yassine Bouchra">Yassine Bouchra</option>
+                    <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-up</label>
-                  <input
-                    type="text"
-                    value={leadFormData.nextFollowUp}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  />
+                  <label htmlFor="edit-lead-contact" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Method</label>
+                  <select
+                    id="edit-lead-contact"
+                    value={leadFormData.preferredContact}
+                    onChange={(e) => setLeadFormData({ ...leadFormData, preferredContact: e.target.value })}
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
+                  >
+                    <option value="Email">Email</option>
+                    <option value="Phone">Phone</option>
+                    <option value="In-person">In-person</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Location</label>
+                  <label htmlFor="edit-lead-location" className="block text-xs font-semibold text-[#64748B] mb-1">Location</label>
                   <input
+                    id="edit-lead-location"
                     type="text"
                     value={leadFormData.location}
                     onChange={(e) => setLeadFormData({ ...leadFormData, location: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
-                <textarea
-                  rows={3}
-                  value={leadFormData.internalNotes}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
+                <label htmlFor="edit-lead-followup" className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-Up</label>
+                <input
+                  id="edit-lead-followup"
+                  type="text"
+                  value={leadFormData.nextFollowUp}
+                  onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
                 />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E2E8F0]">
+              <div>
+                <label htmlFor="edit-lead-notes" className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
+                <textarea
+                  id="edit-lead-notes"
+                  rows={2}
+                  value={leadFormData.internalNotes}
+                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
@@ -1552,14 +1731,15 @@ export const CrmLeadsPage: React.FC = () => {
 
       {/* Add Activity Modal */}
       {isAddActivityModalOpen && selectedLead && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-md overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-activity-modal-title">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 className="text-base font-bold text-[#1E1B4B]">Log Activity</h3>
+              <h3 id="add-activity-modal-title" className="text-base font-bold text-[#1E1B4B]">Log Activity</h3>
               <button
                 type="button"
                 onClick={() => setIsAddActivityModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1567,57 +1747,57 @@ export const CrmLeadsPage: React.FC = () => {
 
             <form onSubmit={handleAddActivity} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#64748B] mb-1">Activity Title</label>
-                <input
-                  type="text"
-                  value={activityForm.title}
-                  onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
-                  placeholder="e.g. Qualification call completed"
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Date & Time</label>
-                  <input
-                    type="text"
-                    value={activityForm.date}
-                    onChange={(e) => setActivityForm({ ...activityForm, date: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#64748B] mb-1">Type</label>
-                  <select
-                    value={activityForm.type}
-                    onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as any })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  >
-                    <option value="call">Phone Call</option>
-                    <option value="email">Email</option>
-                    <option value="meeting">Meeting</option>
-                    <option value="note">Internal Note</option>
-                  </select>
-                </div>
+                <label htmlFor="activity-type" className="block text-xs font-semibold text-[#64748B] mb-1">Activity Type</label>
+                <select
+                  id="activity-type"
+                  value={activityForm.type}
+                  onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as any })}
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
+                >
+                  <option value="call">Call</option>
+                  <option value="email">Email</option>
+                  <option value="meeting">Meeting</option>
+                  <option value="note">Internal Note</option>
+                </select>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#64748B] mb-1">Description</label>
-                <textarea
-                  rows={3}
-                  value={activityForm.description}
-                  onChange={(e) => setActivityForm({ ...activityForm, description: e.target.value })}
-                  placeholder="Summary of what was discussed, next commitments..."
+                <label htmlFor="activity-title" className="block text-xs font-semibold text-[#64748B] mb-1">Title *</label>
+                <input
+                  id="activity-title"
+                  type="text"
+                  value={activityForm.title}
+                  onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
+                  placeholder="e.g. Discovery Call with Operations Team"
                   className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
                   required
                 />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E2E8F0]">
+              <div>
+                <label htmlFor="activity-date" className="block text-xs font-semibold text-[#64748B] mb-1">Date & Time</label>
+                <input
+                  id="activity-date"
+                  type="text"
+                  value={activityForm.date}
+                  onChange={(e) => setActivityForm({ ...activityForm, date: e.target.value })}
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="activity-desc" className="block text-xs font-semibold text-[#64748B] mb-1">Description</label>
+                <textarea
+                  id="activity-desc"
+                  rows={3}
+                  value={activityForm.description}
+                  onChange={(e) => setActivityForm({ ...activityForm, description: e.target.value })}
+                  placeholder="Summary of conversation, questions raised, commitments made..."
+                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsAddActivityModalOpen(false)}
@@ -1639,13 +1819,10 @@ export const CrmLeadsPage: React.FC = () => {
 
       {/* Import CSV Modal */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="import-csv-modal-title">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <FileSpreadsheet className="w-5 h-5 text-[#6D28D9]" />
-                <h3 className="text-base font-bold text-[#1E1B4B]">Import Leads from CSV</h3>
-              </div>
+              <h3 id="import-csv-modal-title" className="text-base font-bold text-[#1E1B4B]">Import Leads from CSV</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -1654,73 +1831,77 @@ export const CrmLeadsPage: React.FC = () => {
                   setCsvPreviewRows([]);
                   setCsvErrors([]);
                 }}
-                className="text-[#94A3B8] hover:text-[#1E1B4B]"
+                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
+                aria-label="Close dialog"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 space-y-4">
-              <p className="text-xs text-[#64748B]">
-                Upload a CSV file containing contact records. Expected columns: <strong>Name, Company, Email, Phone, Lead Status</strong>.
-              </p>
-
-              {/* Upload Dropzone */}
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-[#DDD6FE] hover:border-[#6D28D9] bg-[#FAF9FD] rounded-xl p-6 text-center cursor-pointer transition-colors"
-              >
-                <Upload className="w-8 h-8 text-[#6D28D9] mx-auto mb-2" />
-                <div className="text-xs font-semibold text-[#1E1B4B]">
-                  {csvFile ? csvFile.name : 'Click to select CSV file'}
-                </div>
-                <div className="text-[11px] text-[#94A3B8] mt-1">
-                  Supports UTF-8 CSV documents with comma-separated columns
-                </div>
+              <div className="p-4 rounded-xl border-2 border-dashed border-[#DDD6FE] bg-[#FAF9FD] text-center">
+                <FileSpreadsheet className="w-8 h-8 text-[#6D28D9] mx-auto mb-2" />
+                <p className="text-xs font-medium text-[#1E1B4B]">
+                  Select or drag a CSV file with columns: <span className="font-bold">Name, Email, Company, Phone, Status</span>
+                </p>
+                <p className="text-[11px] text-[#64748B] mt-1">UTF-8 encoded .csv files up to 5MB</p>
                 <input
                   ref={fileInputRef}
+                  id="crm-csv-file-input"
                   type="file"
                   accept=".csv"
                   onChange={handleFileChange}
                   className="hidden"
                 />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-3 px-4 py-2 bg-white border border-[#DDD6FE] text-[#6D28D9] hover:bg-[#F5F3FF] text-xs font-semibold rounded-lg shadow-2xs inline-flex items-center gap-2"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{csvFile ? csvFile.name : 'Choose CSV File'}</span>
+                </button>
               </div>
 
-              {/* Validation errors */}
               {csvErrors.length > 0 && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-1">
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-1" role="alert">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Upload Issue</span>
+                  </div>
                   {csvErrors.map((err, i) => (
-                    <div key={i} className="flex items-center gap-2">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{err}</span>
-                    </div>
+                    <div key={i}>{err}</div>
                   ))}
                 </div>
               )}
 
-              {/* Preview table */}
               {csvPreviewRows.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-semibold text-[#1E1B4B]">
-                    <span>Valid Records Found: {csvPreviewRows.length}</span>
+                <div>
+                  <div className="text-xs font-bold text-[#1E1B4B] mb-2 flex items-center justify-between">
+                    <span>File Preview ({csvPreviewRows.length} leads detected)</span>
+                    <span className="text-[11px] text-[#0D9488] font-normal">Ready to import</span>
                   </div>
-                  <div className="max-h-36 overflow-y-auto border border-[#E2E8F0] rounded-lg">
-                    <table className="w-full text-left text-[11px]">
-                      <thead className="bg-[#F8F7FC] border-b border-[#E2E8F0] text-[#64748B]">
+                  <div className="max-h-48 overflow-y-auto border border-[#E2E8F0] rounded-lg">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-[#FAF9FD] text-[11px] text-[#64748B] sticky top-0 border-b border-[#E2E8F0]">
                         <tr>
-                          <th className="p-2">Name</th>
-                          <th className="p-2">Company</th>
-                          <th className="p-2">Email</th>
-                          <th className="p-2">Status</th>
+                          <th className="py-2 px-3">Name</th>
+                          <th className="py-2 px-3">Company</th>
+                          <th className="py-2 px-3">Email</th>
+                          <th className="py-2 px-3">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#F1F5F9]">
-                        {csvPreviewRows.map((r, i) => (
-                          <tr key={i}>
-                            <td className="p-2 font-medium">{r.name}</td>
-                            <td className="p-2 text-[#64748B]">{r.company}</td>
-                            <td className="p-2 text-[#64748B]">{r.email}</td>
-                            <td className="p-2">{r.status}</td>
+                        {csvPreviewRows.slice(0, 10).map((row, i) => (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="py-1.5 px-3 font-medium text-[#1E1B4B]">{row.name}</td>
+                            <td className="py-1.5 px-3 text-[#64748B]">{row.company}</td>
+                            <td className="py-1.5 px-3 text-[#64748B]">{row.email}</td>
+                            <td className="py-1.5 px-3">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#EDE9FE] text-[#6D28D9]">
+                                {row.status}
+                              </span>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1729,7 +1910,7 @@ export const CrmLeadsPage: React.FC = () => {
                 </div>
               )}
 
-              <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E2E8F0]">
+              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -1746,9 +1927,10 @@ export const CrmLeadsPage: React.FC = () => {
                   type="button"
                   disabled={csvPreviewRows.length === 0}
                   onClick={handleConfirmImport}
-                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] disabled:bg-[#94A3B8] disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-2xs"
+                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-2xs inline-flex items-center gap-1.5"
                 >
-                  Import {csvPreviewRows.length > 0 ? `${csvPreviewRows.length} Leads` : ''}
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Import {csvPreviewRows.length} Leads</span>
                 </button>
               </div>
             </div>
@@ -1758,13 +1940,13 @@ export const CrmLeadsPage: React.FC = () => {
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-sm p-6 text-center">
+        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-lead-modal-title" aria-describedby="delete-lead-modal-desc">
+          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-sm p-6 text-center animate-in fade-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
               <Trash2 className="w-6 h-6" />
             </div>
-            <h4 className="text-base font-bold text-[#1E1B4B]">Delete Contact?</h4>
-            <p className="text-xs text-[#64748B] mt-1.5">
+            <h4 id="delete-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Delete Contact?</h4>
+            <p id="delete-lead-modal-desc" className="text-xs text-[#64748B] mt-1.5">
               This lead record and its associated activity history will be deleted.
             </p>
             <div className="mt-5 flex items-center justify-center gap-3">
@@ -1786,6 +1968,7 @@ export const CrmLeadsPage: React.FC = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };
