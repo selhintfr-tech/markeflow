@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ChevronsUpDown,
+  ChevronUp,
+  ChevronDown,
   FileText,
   RotateCcw,
   MoreHorizontal,
@@ -25,124 +27,212 @@ interface ArchiveTableProps {
 
 type SortField = 'name' | 'type' | 'workspace' | 'archivedDate' | 'archivedBy' | 'previousStatus';
 
+const parseArchivedDate = (dateStr: string): number => {
+  if (!dateStr) return 0;
+  const parsed = Date.parse(dateStr);
+  if (!isNaN(parsed)) return parsed;
+  const parts = dateStr.trim().split(/\s+/);
+  if (parts.length === 3) {
+    const monthMap: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const day = parseInt(parts[0], 10);
+    const month = monthMap[parts[1].toLowerCase().slice(0, 3)] ?? 0;
+    const year = parseInt(parts[2], 10);
+    if (!isNaN(day) && !isNaN(year)) {
+      return new Date(year, month, day).getTime();
+    }
+  }
+  return 0;
+};
+
 export const ArchiveTable: React.FC<ArchiveTableProps> = ({
   records,
   onViewDetails,
   onRestore,
   onClearFilters,
 }) => {
-  const [sortField, setSortField] = useState<SortField | null>(null);
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortField, setSortField] = useState<SortField | null>('archivedDate');
+  const [sortAsc, setSortAsc] = useState(false); // Default latest archives first
   const [activeMenuRecordId, setActiveMenuRecordId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const PAGE_SIZE = 10;
+
+  // Close three-dot menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setActiveMenuRecordId(null);
+      }
+    };
+    if (activeMenuRecordId) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [activeMenuRecordId]);
+
 
   // Sorting
-  const sortedRecords = [...records].sort((a, b) => {
-    if (!sortField) return 0;
-    const valA = (a[sortField] || '').toString().toLowerCase();
-    const valB = (b[sortField] || '').toString().toLowerCase();
-    if (valA < valB) return sortAsc ? -1 : 1;
-    if (valA > valB) return sortAsc ? 1 : -1;
-    return 0;
-  });
+  const sortedRecords = useMemo(() => {
+    return [...records].sort((a, b) => {
+      if (!sortField) return 0;
+      if (sortField === 'archivedDate') {
+        const timeA = parseArchivedDate(a.archivedDate);
+        const timeB = parseArchivedDate(b.archivedDate);
+        return sortAsc ? timeA - timeB : timeB - timeA;
+      }
+      const valA = (a[sortField] || '').toString();
+      const valB = (b[sortField] || '').toString();
+      const cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [records, sortField, sortAsc]);
+
+  // Pagination calculation
+  const totalPages = Math.max(1, Math.ceil(sortedRecords.length / PAGE_SIZE));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
+  const endIndex = Math.min(startIndex + PAGE_SIZE, sortedRecords.length);
+  const paginatedRecords = useMemo(() => {
+    return sortedRecords.slice(startIndex, endIndex);
+  }, [sortedRecords, startIndex, endIndex]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
       setSortAsc(!sortAsc);
     } else {
       setSortField(field);
-      setSortAsc(true);
+      setSortAsc(field === 'archivedDate' ? false : true);
     }
+    setCurrentPage(1);
   };
 
   const getRecordIcon = (type: ArchivedRecord['type']) => {
     switch (type) {
       case 'Campaign':
-        return <Megaphone className="w-4 h-4 stroke-[2]" />;
+        return <Megaphone className="w-4 h-4 stroke-[2.2]" />;
       case 'Project':
-        return <FolderKanban className="w-4 h-4 stroke-[2]" />;
+        return <FolderKanban className="w-4 h-4 stroke-[2.2]" />;
       case 'Report':
-        return <FileText className="w-4 h-4 stroke-[2]" />;
+        return <FileText className="w-4 h-4 stroke-[2.2]" />;
       case 'File Bundle':
-        return <Files className="w-4 h-4 stroke-[2]" />;
       default:
-        return <FileText className="w-4 h-4 stroke-[2]" />;
+        return <Files className="w-4 h-4 stroke-[2.2]" />;
     }
   };
 
   const handleCopyId = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard?.writeText(id);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(id);
+    }
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    setTimeout(() => {
+      setCopiedId(null);
+      setActiveMenuRecordId(null);
+    }, 1500);
+  };
+
+  const handleExportMetadata = (record: ArchivedRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
     setActiveMenuRecordId(null);
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(record, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('download', `archived-${record.id}-${record.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json`);
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+  };
+
+  const renderSortIndicator = (field: SortField) => {
+    if (sortField !== field) {
+      return <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />;
+    }
+    return sortAsc ? (
+      <ChevronUp className="w-3.5 h-3.5 text-[#6D28D9] stroke-[2.5]" />
+    ) : (
+      <ChevronDown className="w-3.5 h-3.5 text-[#6D28D9] stroke-[2.5]" />
+    );
   };
 
   return (
     <div className="space-y-4">
-      {/* Table Container */}
+      {/* Archive Table Container */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-w-full">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-[11px] font-semibold text-[#64748B] select-none">
+              <tr className="border-b border-[#E2E8F0] bg-[#F8F7FC] text-xs font-semibold text-[#64748B]">
                 <th
                   onClick={() => handleSort('name')}
-                  className="px-5 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-5 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'name' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Name</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('name')}
                   </div>
                 </th>
 
                 <th
                   onClick={() => handleSort('type')}
-                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'type' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Record Type</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('type')}
                   </div>
                 </th>
 
                 <th
                   onClick={() => handleSort('workspace')}
-                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'workspace' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Workspace</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('workspace')}
                   </div>
                 </th>
 
                 <th
                   onClick={() => handleSort('archivedDate')}
-                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'archivedDate' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Archived Date</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('archivedDate')}
                   </div>
                 </th>
 
                 <th
                   onClick={() => handleSort('archivedBy')}
-                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'archivedBy' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Archived By</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('archivedBy')}
                   </div>
                 </th>
 
                 <th
                   onClick={() => handleSort('previousStatus')}
-                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap"
+                  className="px-4 py-3.5 cursor-pointer hover:text-[#1E1B4B] transition-colors whitespace-nowrap select-none"
+                  aria-sort={sortField === 'previousStatus' ? (sortAsc ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Previous Status</span>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#94A3B8]" />
+                    {renderSortIndicator('previousStatus')}
                   </div>
                 </th>
 
@@ -153,7 +243,7 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
             </thead>
 
             <tbody className="divide-y divide-[#F1F5F9] text-xs">
-              {sortedRecords.length === 0 ? (
+              {paginatedRecords.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-12 text-center text-[#64748B]">
                     <div className="max-w-xs mx-auto space-y-3">
@@ -177,7 +267,7 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                sortedRecords.map((record) => (
+                paginatedRecords.map((record) => (
                   <tr
                     key={record.id}
                     className="hover:bg-slate-50/70 transition-colors group"
@@ -262,7 +352,7 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
                         </button>
 
                         {/* Three-dot menu button */}
-                        <div className="relative">
+                        <div className="relative" ref={activeMenuRecordId === record.id ? menuRef : undefined}>
                           <button
                             type="button"
                             onClick={() =>
@@ -272,6 +362,7 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
                             }
                             className="p-1.5 text-[#94A3B8] hover:text-[#475569] rounded-lg hover:bg-slate-100 transition-colors"
                             aria-label="More actions"
+                            aria-expanded={activeMenuRecordId === record.id}
                           >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
@@ -309,17 +400,14 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
                                 className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors"
                               >
                                 <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />
-                                <span>{copiedId === record.id ? 'Copied!' : 'Copy Record ID'}</span>
+                                <span>{copiedId === record.id ? 'Copied ID!' : 'Copy Record ID'}</span>
                               </button>
 
                               <div className="my-1 border-t border-[#F1F5F9]" />
 
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setActiveMenuRecordId(null);
-                                  alert(`Downloading metadata for "${record.name}"...`);
-                                }}
+                                onClick={(e) => handleExportMetadata(record, e)}
                                 className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors"
                               >
                                 <Download className="w-3.5 h-3.5 text-[#94A3B8]" />
@@ -338,34 +426,48 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
         </div>
       </div>
 
-      {/* Footer / Pagination Controls matching Screenshot 1 */}
-      <div className="flex items-center justify-between text-xs text-[#64748B] pt-1 px-1">
+      {/* Footer / Pagination Controls */}
+      <div className="flex flex-wrap items-center justify-between text-xs text-[#64748B] pt-1 px-1 gap-2">
         <div>
-          Showing {sortedRecords.length > 0 ? `1–${sortedRecords.length}` : '0'} of{' '}
+          Showing {sortedRecords.length > 0 ? `${startIndex + 1}–${endIndex}` : '0'} of{' '}
           {sortedRecords.length} archived records
         </div>
 
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            disabled
-            className="w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center text-[#94A3B8] bg-white cursor-not-allowed opacity-60"
+            disabled={safePage <= 1}
+            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            className={`w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center text-[#475569] bg-white transition-colors ${
+              safePage <= 1 ? 'cursor-not-allowed opacity-50 text-[#94A3B8]' : 'hover:bg-slate-50 hover:text-[#1E1B4B]'
+            }`}
             aria-label="Previous page"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
 
-          <button
-            type="button"
-            className="w-7 h-7 rounded-lg bg-[#6D28D9] text-white flex items-center justify-center font-bold text-xs shadow-xs"
-          >
-            1
-          </button>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+            <button
+              key={pageNum}
+              type="button"
+              onClick={() => setCurrentPage(pageNum)}
+              className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition-colors ${
+                safePage === pageNum
+                  ? 'bg-[#6D28D9] text-white shadow-xs'
+                  : 'border border-[#E2E8F0] bg-white text-[#475569] hover:bg-slate-50'
+              }`}
+            >
+              {pageNum}
+            </button>
+          ))}
 
           <button
             type="button"
-            disabled
-            className="w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center text-[#94A3B8] bg-white cursor-not-allowed opacity-60"
+            disabled={safePage >= totalPages}
+            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            className={`w-7 h-7 rounded-lg border border-[#E2E8F0] flex items-center justify-center text-[#475569] bg-white transition-colors ${
+              safePage >= totalPages ? 'cursor-not-allowed opacity-50 text-[#94A3B8]' : 'hover:bg-slate-50 hover:text-[#1E1B4B]'
+            }`}
             aria-label="Next page"
           >
             <ChevronRight className="w-3.5 h-3.5" />

@@ -32,6 +32,7 @@ export const ArchiveDetailsModal: React.FC<ArchiveDetailsModalProps> = ({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      aria-labelledby="archive-details-title"
     >
       <div
         className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150"
@@ -54,7 +55,7 @@ export const ArchiveDetailsModal: React.FC<ArchiveDetailsModalProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-bold text-[#1E1B4B]">{record.name}</h3>
+              <h3 id="archive-details-title" className="text-lg font-bold text-[#1E1B4B]">{record.name}</h3>
               <ArchiveStatusBadge status={record.previousStatus} />
             </div>
             <p className="text-xs text-[#64748B] mt-0.5">{record.subtitle}</p>
