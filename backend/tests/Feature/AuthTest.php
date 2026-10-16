@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\Workspace;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
@@ -46,6 +47,9 @@ class AuthTest extends TestCase
                 ],
                 'message',
             ])
+            ->assertJsonMissingPath('user.password')
+            ->assertJsonMissingPath('user.remember_token')
+            ->assertJsonMissingPath('user.tokens')
             ->assertJson([
                 'user' => [
                     'name' => 'Jane Developer',
@@ -140,6 +144,9 @@ class AuthTest extends TestCase
                 ],
                 'message',
             ])
+            ->assertJsonMissingPath('user.password')
+            ->assertJsonMissingPath('user.remember_token')
+            ->assertJsonMissingPath('user.tokens')
             ->assertJson([
                 'user' => [
                     'id' => (string) $user->id,
@@ -223,7 +230,44 @@ class AuthTest extends TestCase
                 'id' => (string) $user->id,
                 'name' => 'Current Session User',
                 'email' => 'current@example.com',
-            ]);
+            ])
+            ->assertJsonMissingPath('password')
+            ->assertJsonMissingPath('remember_token')
+            ->assertJsonMissingPath('tokens');
+    }
+
+    public function test_auth_payload_includes_only_frontend_contract_fields_and_safe_workspace_membership_data(): void
+    {
+        $user = User::create([
+            'name' => 'Payload User',
+            'email' => 'payload@example.com',
+            'password' => Hash::make('Password123!'),
+        ]);
+        $workspace = Workspace::createWithInitialOwner($user, [
+            'name' => 'Payload Workspace',
+            'slug' => 'payload-workspace',
+        ]);
+
+        $response = $this->actingAs($user)->getJson('/api/user');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'id',
+                'name',
+                'email',
+                'phone',
+                'job_title',
+                'avatar_url',
+                'timezone',
+                'locale',
+                'role',
+                'workspaceId',
+            ])
+            ->assertJsonPath('role', 'owner')
+            ->assertJsonPath('workspaceId', $workspace->id)
+            ->assertJsonMissingPath('password')
+            ->assertJsonMissingPath('remember_token')
+            ->assertJsonMissingPath('tokens');
     }
 
     public function test_unauthenticated_request_to_api_user_returns_401(): void
