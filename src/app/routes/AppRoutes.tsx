@@ -1,6 +1,7 @@
-import React, { Suspense, lazy } from 'react';
+﻿import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from '../../components/layout/AppLayout';
+import { ProtectedRoute } from '../../components/auth/ProtectedRoute';
 
 // Accessible loading fallback for lazy-loaded route components
 const RouteLoadingFallback: React.FC = () => (
@@ -103,8 +104,14 @@ export const AppRoutes: React.FC = () => {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-        {/* Main Application Routes (Protected Layout) */}
-        <Route element={<AppLayout />}>
+        {/* Main Application Routes (Protected by Server-Validated Session) */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        >
           {/* Primary Dashboard Route */}
           <Route path="/" element={<DashboardPage />} />
 

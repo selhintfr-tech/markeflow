@@ -136,4 +136,27 @@ class User extends Authenticatable
 
         return in_array($role, [WorkspaceUser::ROLE_OWNER, WorkspaceUser::ROLE_ADMIN], true);
     }
+
+    /**
+     * Format user payload for authentication API responses matching React AuthUser contract.
+     *
+     * @return array<string, mixed>
+     */
+    public function toAuthPayload(): array
+    {
+        $primaryMembership = $this->workspaceMemberships()->first();
+
+        return [
+            'id' => (string) $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'phone' => $this->phone,
+            'job_title' => $this->job_title,
+            'avatar_url' => $this->avatar_url,
+            'timezone' => $this->timezone ?? 'Africa/Casablanca',
+            'locale' => $this->locale ?? 'en',
+            'role' => $primaryMembership?->role,
+            'workspaceId' => $primaryMembership?->workspace_id,
+        ];
+    }
 }
