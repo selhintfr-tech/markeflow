@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2, X, ShieldCheck } from 'lucide-react';
 import { AuthLayout } from '../components/AuthLayout';
-import { authService } from '../services/authService';
+import { useAuth } from '../../../context/AuthContext';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
+  const { register } = useAuth();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -71,7 +72,7 @@ export const RegisterPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await authService.register({
+      const response = await register({
         name: fullName.trim(),
         email: email.trim(),
         password,
@@ -80,12 +81,14 @@ export const RegisterPage: React.FC = () => {
       });
 
       if (response.success) {
-        navigate('/login');
+        navigate('/login', { state: { registered: true, email: email.trim() } });
       } else {
-        setErrorMessage(response.message || 'Registration failed.');
+        setErrorMessage(response.message || 'Registration could not be completed.');
       }
     } catch {
-      setErrorMessage('Unable to connect to registration service.');
+      setErrorMessage(
+        'Backend registration service is offline or unreachable. Please verify the Laravel API connection at http://localhost:8000.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -112,17 +115,8 @@ export const RegisterPage: React.FC = () => {
           <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
-              <p className="font-semibold text-amber-900">Backend Notice</p>
+              <p className="font-semibold text-amber-900">Registration Notice</p>
               <p className="mt-0.5">{errorMessage}</p>
-              <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center justify-between">
-                <span className="text-[11px] text-amber-700">Explore app in standalone demo mode:</span>
-                <Link
-                  to="/"
-                  className="font-bold underline text-amber-900 hover:text-amber-950 text-xs"
-                >
-                  Continue to Workspace →
-                </Link>
-              </div>
             </div>
           </div>
         )}
@@ -372,40 +366,63 @@ export const RegisterPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Honest Legal Disclosure Modal */}
+      {/* Legal Modal (Terms / Privacy) */}
       {showLegalModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-xl border border-[#E2E8F0] w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-[#1E1B4B]">
                 <ShieldCheck className="w-5 h-5 text-[#6D28D9]" />
-                <h3 className="text-sm font-bold text-[#1E1B4B]">
+                <h3 className="font-bold text-base">
                   {showLegalModal === 'terms' ? 'Terms of Service' : 'Privacy Policy'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowLegalModal(null)}
-                className="p-1 rounded-lg text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="py-4 text-xs text-[#64748B] space-y-2.5 leading-relaxed">
-              <p>
-                MarketFlow respects your intellectual property and marketing confidentiality. Full legal disclosures will be published on the production domain alongside the Laravel 12 API deployment.
-              </p>
-              <p>
-                No telemetry or personal account credentials are sold or transferred to third-party ad networks.
-              </p>
+
+            <div className="py-4 text-xs text-slate-600 space-y-3 max-h-80 overflow-y-auto leading-relaxed">
+              {showLegalModal === 'terms' ? (
+                <>
+                  <p className="font-semibold text-slate-800">1. Acceptance of Terms</p>
+                  <p>
+                    By creating an account on MarketFlow, you agree to comply with and be bound by these terms. MarketFlow provides marketing campaign management and workflow tools.
+                  </p>
+                  <p className="font-semibold text-slate-800">2. Account Responsibility</p>
+                  <p>
+                    You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account.
+                  </p>
+                  <p className="font-semibold text-slate-800">3. Workspace Data</p>
+                  <p>
+                    Workspace owners retain ownership of all marketing, project, and campaign data entered into MarketFlow.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-slate-800">1. Data Collection</p>
+                  <p>
+                    We collect your name, work email address, and authentication credentials solely to provide account access and multi-tenant workspace isolation.
+                  </p>
+                  <p className="font-semibold text-slate-800">2. Data Security</p>
+                  <p>
+                    All passwords are cryptographically hashed. We implement CSRF protection, secure sessions, and multi-tenant scoping to ensure your marketing data remains strictly private.
+                  </p>
+                </>
+              )}
             </div>
-            <div className="pt-3 border-t border-[#F1F5F9] flex justify-end">
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={() => setShowLegalModal(null)}
-                className="px-4 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6] transition-colors"
+                className="px-4 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6]"
               >
-                Understood
+                Close
               </button>
             </div>
           </div>

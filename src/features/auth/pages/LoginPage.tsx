@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+﻿import React, { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 import { AuthLayout } from '../components/AuthLayout';
-import { authService } from '../services/authService';
+import { useAuth } from '../../../context/AuthContext';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
+
+  // Retrieve destination path from location state or fallback to dashboard
+  const destination = (location.state as { from?: { pathname?: string } })?.from?.pathname || '/';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -42,19 +47,24 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await authService.login({
+      const response = await login({
         email: email.trim(),
         password,
         remember,
       });
 
-      if (response.success) {
-        navigate('/');
+      if (response.success && response.user) {
+        // Redirect to intended protected destination
+        navigate(destination, { replace: true });
       } else {
-        setErrorMessage(response.message || 'Authentication failed.');
+        setErrorMessage(
+          response.message || 'Authentication failed. Please verify your email and password.'
+        );
       }
     } catch {
-      setErrorMessage('Unable to connect to authentication service.');
+      setErrorMessage(
+        'Backend authentication service is offline or unreachable. Please start the Laravel 12 API server at http://localhost:8000.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -78,17 +88,8 @@ export const LoginPage: React.FC = () => {
           <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
-              <p className="font-semibold text-amber-900">Backend Notice</p>
+              <p className="font-semibold text-amber-900">Authentication Service Notice</p>
               <p className="mt-0.5">{errorMessage}</p>
-              <div className="mt-2 pt-2 border-t border-amber-200/60 flex items-center justify-between">
-                <span className="text-[11px] text-amber-700">Explore app in standalone demo mode:</span>
-                <Link
-                  to="/"
-                  className="font-bold underline text-amber-900 hover:text-amber-950 text-xs"
-                >
-                  Continue to Workspace →
-                </Link>
-              </div>
             </div>
           </div>
         )}
