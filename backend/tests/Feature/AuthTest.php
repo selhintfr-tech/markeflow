@@ -65,6 +65,9 @@ class AuthTest extends TestCase
 
         $this->assertTrue(Auth::check());
         $this->assertSame('jane@example.com', Auth::user()->email);
+        $this->getJson('/api/user')
+            ->assertOk()
+            ->assertJsonPath('id', (string) Auth::id());
     }
 
     public function test_registration_fails_when_terms_are_not_accepted(): void
@@ -159,6 +162,31 @@ class AuthTest extends TestCase
         $this->assertTrue(Auth::check());
         $this->assertSame($user->id, Auth::id());
         $this->assertNotEquals($initialSessionId, session()->getId());
+    }
+
+    public function test_login_session_persists_across_user_and_logout_requests(): void
+    {
+        $user = User::create([
+            'name' => 'Persistent Session User',
+            'email' => 'persistent-session@example.com',
+            'password' => Hash::make('CorrectPassword123!'),
+        ]);
+
+        $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'CorrectPassword123!',
+        ])->assertOk()
+            ->assertJsonPath('user.id', (string) $user->id);
+
+        $this->getJson('/api/user')
+            ->assertOk()
+            ->assertJsonPath('id', (string) $user->id);
+
+        $this->postJson('/api/logout')
+            ->assertOk();
+
+        $this->getJson('/api/user')
+            ->assertUnauthorized();
     }
 
     public function test_login_fails_with_wrong_password(): void

@@ -87,7 +87,7 @@ export const RegisterPage: React.FC = () => {
       }
     } catch {
       setErrorMessage(
-        'Backend registration service is offline or unreachable. Please verify the Laravel API connection at http://localhost:8000.'
+        'Unable to reach the registration service. Check that Laravel is running and the Vite API proxy is available.'
       );
     } finally {
       setIsLoading(false);

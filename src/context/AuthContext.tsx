@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!isMounted) return;
         setUser(null);
         setIsApiAvailable(false);
-        setLastError('Unable to connect to Laravel authentication server at http://localhost:8000.');
+        setLastError('Unable to connect to the Laravel authentication service through the Vite API proxy.');
       })
       .finally(() => {
         if (isMounted) {
@@ -81,7 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       setUser(null);
       setIsApiAvailable(false);
-      setLastError('Unable to connect to Laravel authentication server at http://localhost:8000.');
+      setLastError('Unable to connect to the Laravel authentication service through the Vite API proxy.');
     } finally {
       setIsLoading(false);
     }

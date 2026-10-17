@@ -63,7 +63,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch {
       setErrorMessage(
-        'Backend authentication service is offline or unreachable. Please start the Laravel 12 API server at http://localhost:8000.'
+        'Unable to reach the authentication service. Check that Laravel is running and the Vite API proxy is available.'
       );
     } finally {
       setIsLoading(false);

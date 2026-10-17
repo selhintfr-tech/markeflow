@@ -7,30 +7,64 @@ import type {
   AuthUser,
 } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
 class AuthService {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = API_BASE_URL;
-  }
-
   /**
-   * Initializes CSRF protection for Laravel Sanctum cookie-based authentication
+   * Initializes Laravel's session CSRF token through the same-origin Vite proxy.
    */
   async getCsrfCookie(): Promise<void> {
-    try {
-      await fetch(`${this.baseUrl}/sanctum/csrf-cookie`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
-    } catch {
-      // Backend not yet reachable in local dev
+    const response = await fetch('/sanctum/csrf-cookie', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`CSRF initialization failed with HTTP ${response.status}.`);
     }
+
+    if (!this.readXsrfToken()) {
+      throw new Error('Laravel did not provide an XSRF-TOKEN cookie.');
+    }
+  }
+
+  private readXsrfToken(): string | null {
+    const cookie = document.cookie
+      .split('; ')
+      .find((value) => value.startsWith('XSRF-TOKEN='));
+
+    if (!cookie) return null;
+
+    try {
+      return decodeURIComponent(cookie.slice('XSRF-TOKEN='.length));
+    } catch {
+      return null;
+    }
+  }
+
+  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+    const method = (init.method || 'GET').toUpperCase();
+    const headers = new Headers(init.headers);
+    headers.set('Accept', 'application/json');
+
+    if (!SAFE_METHODS.includes(method)) {
+      await this.getCsrfCookie();
+      const xsrfToken = this.readXsrfToken();
+
+      if (!xsrfToken) {
+        throw new Error('Laravel XSRF-TOKEN cookie is missing.');
+      }
+
+      headers.set('X-XSRF-TOKEN', xsrfToken);
+    }
+
+    return fetch(path, {
+      ...init,
+      method,
+      headers,
+      credentials: 'include',
+    });
   }
 
   /**
@@ -38,14 +72,10 @@ class AuthService {
    */
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
-      await this.getCsrfCookie();
-
-      const response = await fetch(`${this.baseUrl}/api/login`, {
+      const response = await this.request('/api/login', {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         body: JSON.stringify(credentials),
       });
@@ -66,10 +96,9 @@ class AuthService {
         message: 'Successfully signed in.',
       };
     } catch {
-      // Truthful status when Laravel 12 backend is not reachable
       return {
         success: false,
-        message: 'Backend authentication service is currently offline or unreachable. Please verify the Laravel API connection at http://localhost:8000.',
+        message: 'Unable to connect to the Laravel authentication service. Check that the backend is running and the Vite API proxy is available.',
       };
     }
   }
@@ -79,14 +108,10 @@ class AuthService {
    */
   async register(data: RegisterData): Promise<AuthResponse> {
     try {
-      await this.getCsrfCookie();
-
-      const response = await fetch(`${this.baseUrl}/api/register`, {
+      const response = await this.request('/api/register', {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         body: JSON.stringify(data),
       });
@@ -109,7 +134,7 @@ class AuthService {
     } catch {
       return {
         success: false,
-        message: 'Registration service is currently offline. The Laravel 12 authentication endpoint has not been started yet.',
+        message: 'Unable to connect to the Laravel registration service. Check that the backend is running and the Vite API proxy is available.',
       };
     }
   }
@@ -119,14 +144,10 @@ class AuthService {
    */
   async forgotPassword(data: ForgotPasswordData): Promise<AuthResponse> {
     try {
-      await this.getCsrfCookie();
-
-      const response = await fetch(`${this.baseUrl}/api/forgot-password`, {
+      const response = await this.request('/api/forgot-password', {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         body: JSON.stringify(data),
       });
@@ -158,14 +179,10 @@ class AuthService {
    */
   async resetPassword(data: ResetPasswordData): Promise<AuthResponse> {
     try {
-      await this.getCsrfCookie();
-
-      const response = await fetch(`${this.baseUrl}/api/reset-password`, {
+      const response = await this.request('/api/reset-password', {
         method: 'POST',
-        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         body: JSON.stringify(data),
       });
@@ -195,22 +212,17 @@ class AuthService {
    * Get current authenticated user session
    */
   async getCurrentUser(): Promise<AuthUser | null> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/user`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-        },
-      });
+    const response = await this.request('/api/user');
 
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch {
-      // Offline / not logged in
+    if (response.status === 401) {
+      return null;
     }
-    return null;
+
+    if (!response.ok) {
+      throw new Error(`Unable to validate the current session (HTTP ${response.status}).`);
+    }
+
+    return await response.json();
   }
 
   /**
@@ -218,15 +230,11 @@ class AuthService {
    */
   async logout(): Promise<void> {
     try {
-      await fetch(`${this.baseUrl}/api/logout`, {
+      await this.request('/api/logout', {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-        },
       });
     } catch {
-      // offline
+      // The client clears local authentication state even when the server is unreachable.
     }
   }
 }
