@@ -27,13 +27,15 @@ return new class extends Migration
             $table->uuid('parent_workspace_id')->nullable();
             $table->timestamps();
 
+            $table->index('business_type');
+            $table->index('status');
+        });
+
+        Schema::table('workspaces', function (Blueprint $table) {
             $table->foreign('parent_workspace_id')
                 ->references('id')
                 ->on('workspaces')
                 ->onDelete('set null');
-
-            $table->index('business_type');
-            $table->index('status');
         });
     }
 

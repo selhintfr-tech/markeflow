@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { WorkspaceSelector } from './WorkspaceSelector';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { currentUser } from '../../data/mock';
+import { useAuth } from '../../context/AuthContext';
 
 interface AppHeaderProps {
   onToggleMobileSidebar?: () => void;
@@ -18,6 +19,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const userName = user?.name || currentUser.name;
+  const userEmail = user?.email || currentUser.email;
+  const userInitials =
+    userName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase() || currentUser.initials;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,10 +88,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           >
             {/* User Initials Avatar badge */}
             <div className="w-9 h-9 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center font-semibold text-xs tracking-wide border border-[#DDD6FE]">
-              {currentUser.initials}
+              {userInitials}
             </div>
             <span className="hidden sm:inline text-sm font-medium text-[#1E1B4B]">
-              {currentUser.name}
+              {userName}
             </span>
             <ChevronDown className={`w-3.5 h-3.5 text-[#94A3B8] stroke-[2.2] transition-transform ${isUserMenuOpen ? 'rotate-180' : ''}`} />
           </button>
@@ -91,8 +103,8 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-[#E2E8F0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
             >
               <div className="px-4 py-2 border-b border-[#F1F5F9]">
-                <p className="text-xs font-semibold text-[#1E1B4B]">{currentUser.name}</p>
-                <p className="text-[11px] text-[#64748B] truncate">{currentUser.email}</p>
+                <p className="text-xs font-semibold text-[#1E1B4B]">{userName}</p>
+                <p className="text-[11px] text-[#64748B] truncate">{userEmail}</p>
               </div>
 
               <Link
@@ -120,9 +132,10 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => {
+                onClick={async () => {
                   setIsUserMenuOpen(false);
-                  navigate('/profile');
+                  await logout();
+                  navigate('/login', { replace: true });
                 }}
                 className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-medium text-[#EF4444] hover:bg-red-50 transition-colors text-left"
               >
