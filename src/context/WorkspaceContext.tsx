@@ -1,19 +1,20 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { WorkspaceDetail, MarketingProjectItem } from '../types';
-import { initialWorkspacesDetailList, initialMarketingProjectsList } from '../data/mock';
+import { initialMarketingProjectsList } from '../data/mock';
+import { workspaceService, type WorkspaceInput, type WorkspaceRecord } from '../features/workspaces/workspaceService';
+import { useAuth } from './AuthContext';
 
 interface WorkspaceContextType {
   workspaces: WorkspaceDetail[];
   currentWorkspace: WorkspaceDetail;
+  hasWorkspace: boolean;
+  isLoadingWorkspaces: boolean;
+  workspaceError: string | null;
+  reloadWorkspaces: () => Promise<void>;
   setCurrentWorkspace: (workspaceOrId: WorkspaceDetail | string) => void;
-  addWorkspace: (workspace: {
-    name: string;
-    description: string;
-    location: string;
-    status?: string;
-  }) => WorkspaceDetail;
-  updateWorkspace: (id: string, updates: Partial<WorkspaceDetail>) => void;
-  deleteWorkspace: (id: string) => boolean;
+  addWorkspace: (workspace: WorkspaceInput) => Promise<WorkspaceDetail>;
+  updateWorkspace: (id: string, updates: Partial<WorkspaceInput>) => Promise<void>;
+  deleteWorkspace: (id: string) => Promise<void>;
   projects: MarketingProjectItem[];
   addProject: (project: Omit<MarketingProjectItem, 'id' | 'createdAt'>) => MarketingProjectItem;
   updateProject: (id: string, updates: Partial<MarketingProjectItem>) => void;
@@ -23,24 +24,39 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-const WORKSPACES_STORAGE_KEY = 'marketflow_workspaces';
 const PROJECTS_STORAGE_KEY = 'marketflow_projects';
 const CURRENT_WS_STORAGE_KEY = 'marketflow_current_workspace_id';
+const EMPTY_WORKSPACE: WorkspaceDetail = {
+  id: '',
+  name: '',
+  description: '',
+  location: '',
+  currency: '',
+  membersAvatars: [],
+  extraMembersCount: 0,
+  status: '',
+};
+
+function toWorkspaceDetail(record: WorkspaceRecord): WorkspaceDetail {
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.industry || '',
+    location: record.location || '',
+    currency: record.currency,
+    membersCount: record.members_count,
+    membersAvatars: [],
+    extraMembersCount: 0,
+    status: record.status,
+    iconType: record.business_type === 'agency' ? 'users' : 'building',
+  };
+}
 
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Load initial workspaces from localStorage or fallback to mock
-  const [workspaces, setWorkspaces] = useState<WorkspaceDetail[]>(() => {
-    try {
-      const saved = localStorage.getItem(WORKSPACES_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return initialWorkspacesDetailList;
-  });
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const [workspaces, setWorkspaces] = useState<WorkspaceDetail[]>([]);
+  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   // Current selected workspace
   const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
@@ -50,7 +66,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch {
       // ignore
     }
-    return initialWorkspacesDetailList[0]?.id || 'ws-atlas-retail';
+    return '';
   });
 
   // Load initial projects from localStorage or fallback to mock
@@ -67,20 +83,41 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return initialMarketingProjectsList;
   });
 
-  // Sync to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(workspaces));
-    } catch {
-      // ignore
+  const reloadWorkspaces = useCallback(async () => {
+    if (!user) {
+      setWorkspaces([]);
+      setIsLoadingWorkspaces(false);
+      setWorkspaceError(null);
+      return;
     }
-  }, [workspaces]);
+
+    setIsLoadingWorkspaces(true);
+    setWorkspaceError(null);
+    try {
+      const records = await workspaceService.list();
+      const next = records.map(toWorkspaceDetail);
+      setWorkspaces(next);
+      const storedId = localStorage.getItem(CURRENT_WS_STORAGE_KEY);
+      const selected = next.find((workspace) => workspace.id === storedId) || next[0];
+      setCurrentWorkspaceId(selected?.id || '');
+    } catch (error) {
+      setWorkspaces([]);
+      setWorkspaceError(error instanceof Error ? error.message : 'Unable to load workspaces.');
+    } finally {
+      setIsLoadingWorkspaces(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAuthLoading) void reloadWorkspaces();
+  }, [isAuthLoading, reloadWorkspaces]);
 
   useEffect(() => {
     try {
-      localStorage.setItem(CURRENT_WS_STORAGE_KEY, currentWorkspaceId);
+      if (currentWorkspaceId) localStorage.setItem(CURRENT_WS_STORAGE_KEY, currentWorkspaceId);
+      else localStorage.removeItem(CURRENT_WS_STORAGE_KEY);
     } catch {
-      // ignore
+      setWorkspaceError('Unable to persist the active workspace selection.');
     }
   }, [currentWorkspaceId]);
 
@@ -93,7 +130,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [projects]);
 
   const currentWorkspace =
-    workspaces.find((w) => w.id === currentWorkspaceId) || workspaces[0] || initialWorkspacesDetailList[0];
+    workspaces.find((w) => w.id === currentWorkspaceId) || workspaces[0] || EMPTY_WORKSPACE;
 
   const handleSetCurrentWorkspace = (workspaceOrId: WorkspaceDetail | string) => {
     const id = typeof workspaceOrId === 'string' ? workspaceOrId : workspaceOrId.id;
@@ -103,55 +140,25 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  const addWorkspace = (data: {
-    name: string;
-    description: string;
-    location: string;
-    status?: string;
-  }): WorkspaceDetail => {
-    const id = `ws-${Date.now().toString(36)}`;
-    const newWs: WorkspaceDetail = {
-      id,
-      name: data.name.trim(),
-      description: data.description.trim(),
-      location: data.location.trim(),
-      membersCount: 1,
-      membersAvatars: [
-        {
-          id: 'user-se',
-          name: 'Sara El Amrani',
-          initials: 'SE',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80',
-          bgColor: '#EDE9FE',
-          textColor: '#6D28D9',
-        },
-      ],
-      extraMembersCount: 0,
-      projectsCount: 0,
-      status: (data.status as any) || 'Active',
-      iconType: 'building',
-    };
-
-    setWorkspaces((prev) => [...prev, newWs]);
-    return newWs;
+  const addWorkspace = async (data: WorkspaceInput): Promise<WorkspaceDetail> => {
+    const created = toWorkspaceDetail(await workspaceService.create(data));
+    setWorkspaces((prev) => [...prev, created]);
+    setCurrentWorkspaceId(created.id);
+    return created;
   };
 
-  const updateWorkspace = (id: string, updates: Partial<WorkspaceDetail>) => {
-    setWorkspaces((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, ...updates } : w))
-    );
+  const updateWorkspace = async (id: string, updates: Partial<WorkspaceInput>): Promise<void> => {
+    const updated = toWorkspaceDetail(await workspaceService.update(id, updates));
+    setWorkspaces((prev) => prev.map((workspace) => workspace.id === id ? updated : workspace));
   };
 
-  const deleteWorkspace = (id: string): boolean => {
-    if (workspaces.length <= 1) {
-      return false; // Prevent deleting the last workspace
-    }
+  const deleteWorkspace = async (id: string): Promise<void> => {
+    await workspaceService.remove(id);
     setWorkspaces((prev) => prev.filter((w) => w.id !== id));
     if (currentWorkspaceId === id) {
       const nextWs = workspaces.find((w) => w.id !== id);
-      if (nextWs) setCurrentWorkspaceId(nextWs.id);
+      setCurrentWorkspaceId(nextWs?.id || '');
     }
-    return true;
   };
 
   const addProject = (data: Omit<MarketingProjectItem, 'id' | 'createdAt'>): MarketingProjectItem => {
@@ -163,13 +170,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
     setProjects((prev) => [newProj, ...prev]);
 
-    // Also update project count in workspace
-    setWorkspaces((prev) =>
-      prev.map((w) =>
-        w.id === data.workspaceId ? { ...w, projectsCount: (w.projectsCount || 0) + 1 } : w
-      )
-    );
-
     return newProj;
   };
 
@@ -180,18 +180,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const deleteProject = (id: string) => {
-    const projToDelete = projects.find((p) => p.id === id);
     setProjects((prev) => prev.filter((p) => p.id !== id));
-
-    if (projToDelete) {
-      setWorkspaces((prev) =>
-        prev.map((w) =>
-          w.id === projToDelete.workspaceId
-            ? { ...w, projectsCount: Math.max(0, (w.projectsCount || 0) - 1) }
-            : w
-        )
-      );
-    }
   };
 
   const archiveProject = (id: string) => {
@@ -203,6 +192,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       value={{
         workspaces,
         currentWorkspace,
+        hasWorkspace: workspaces.some((workspace) => workspace.id === currentWorkspaceId),
+        isLoadingWorkspaces,
+        workspaceError,
+        reloadWorkspaces,
         setCurrentWorkspace: handleSetCurrentWorkspace,
         addWorkspace,
         updateWorkspace,

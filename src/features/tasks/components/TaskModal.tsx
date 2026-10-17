@@ -1,15 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { TaskItem, TaskPriority, TaskStatus } from '../types';
-import { teamMembers } from '../tasksData';
+
+interface TaskOption {
+  id: string;
+  name: string;
+  project_id?: string;
+}
+
+interface AssigneeOption {
+  id: number;
+  name: string;
+}
 
 interface TaskModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (taskData: Partial<TaskItem>) => void;
+  onSave: (taskData: Partial<TaskItem>) => Promise<void>;
   initialTask?: TaskItem | null;
-  availableProjects: string[];
-  availableCampaigns: string[];
+  availableProjects: TaskOption[];
+  availableCampaigns: TaskOption[];
+  availableAssignees: AssigneeOption[];
+  isSaving: boolean;
+  saveError: string | null;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -51,40 +64,6 @@ const displayToIsoDate = (dateStr: string): string => {
   return '';
 };
 
-/**
- * Converts ISO format 'YYYY-MM-DD' back to application standard format 'DD MMM YYYY'
- * (e.g. '2026-10-15' -> '15 Oct 2026') preserving stored date compatibility.
- */
-const isoToDisplayDate = (isoStr: string): string => {
-  if (!isoStr) return '';
-  const trimmed = isoStr.trim();
-
-  // If already DD MMM YYYY
-  const matchFormatted = trimmed.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
-  if (matchFormatted) return trimmed;
-
-  // YYYY-MM-DD
-  const matchIso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (matchIso) {
-    const year = matchIso[1];
-    const monthIdx = parseInt(matchIso[2], 10) - 1;
-    const day = matchIso[3];
-    if (monthIdx >= 0 && monthIdx < 12) {
-      return `${day} ${MONTH_NAMES[monthIdx]} ${year}`;
-    }
-  }
-
-  const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) {
-    const day = String(parsed.getDate()).padStart(2, '0');
-    const month = MONTH_NAMES[parsed.getMonth()];
-    const year = parsed.getFullYear();
-    return `${day} ${month} ${year}`;
-  }
-
-  return trimmed;
-};
-
 export const TaskModal: React.FC<TaskModalProps> = ({
   isOpen,
   onClose,
@@ -92,15 +71,18 @@ export const TaskModal: React.FC<TaskModalProps> = ({
   initialTask,
   availableProjects,
   availableCampaigns,
+  availableAssignees,
+  isSaving,
+  saveError,
 }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [project, setProject] = useState('');
-  const [campaign, setCampaign] = useState('');
-  const [assigneeName, setAssigneeName] = useState(teamMembers[0].name);
+  const [projectId, setProjectId] = useState('');
+  const [campaignId, setCampaignId] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
-  const [isoDueDate, setIsoDueDate] = useState('2026-10-25');
-  const [status, setStatus] = useState<TaskStatus>('In Progress');
+  const [isoDueDate, setIsoDueDate] = useState('');
+  const [status, setStatus] = useState<TaskStatus>('To Do');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // Sync state during render when initialTask or isOpen transitions (avoids cascading effect renders)
@@ -113,21 +95,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (initialTask) {
       setTitle(initialTask.title);
       setDescription(initialTask.description || '');
-      setProject(initialTask.project);
-      setCampaign(initialTask.campaign);
-      setAssigneeName(initialTask.assignee.name);
+      setProjectId(initialTask.projectId || '');
+      setCampaignId(initialTask.campaignId || '');
+      setAssigneeId(initialTask.assigneeId ? String(initialTask.assigneeId) : '');
       setPriority(initialTask.priority);
-      setIsoDueDate(displayToIsoDate(initialTask.dueDate) || '2026-10-25');
+      setIsoDueDate(displayToIsoDate(initialTask.dueDate));
       setStatus(initialTask.status);
     } else {
       setTitle('');
       setDescription('');
-      setProject(availableProjects[0] || 'Autumn Sales Growth');
-      setCampaign(availableCampaigns[0] || 'Autumn Launch 2026');
-      setAssigneeName(teamMembers[0].name);
+      setProjectId(availableProjects[0]?.id || '');
+      setCampaignId('');
+      setAssigneeId('');
       setPriority('Medium');
-      setIsoDueDate('2026-10-25');
-      setStatus('In Progress');
+      setIsoDueDate('');
+      setStatus('To Do');
     }
     setErrors({});
   }
@@ -162,21 +144,24 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    const matchedAssignee =
-      teamMembers.find((m) => m.name === assigneeName) || teamMembers[0];
-
-    onSave({
+    const matchedAssignee = availableAssignees.find((assignee) => String(assignee.id) === assigneeId);
+    await onSave({
       title: title.trim(),
       description: description.trim(),
-      project: project || availableProjects[0] || 'Autumn Sales Growth',
-      campaign: campaign || availableCampaigns[0] || 'Autumn Launch 2026',
-      assignee: matchedAssignee,
+      project: availableProjects.find((projectOption) => projectOption.id === projectId)?.name || '',
+      projectId: projectId || undefined,
+      campaign: availableCampaigns.find((campaignOption) => campaignOption.id === campaignId)?.name || '',
+      campaignId: campaignId || undefined,
+      assignee: matchedAssignee
+        ? { id: matchedAssignee.id, name: matchedAssignee.name, initials: matchedAssignee.name.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase() }
+        : { name: 'Unassigned', initials: '—' },
+      assigneeId: matchedAssignee?.id,
       priority,
-      dueDate: isoToDisplayDate(isoDueDate),
+      dueDate: isoDueDate,
       status,
     });
 
@@ -207,7 +192,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={(event) => { void handleSubmit(event); }} className="p-6 space-y-4">
+          {saveError && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
           {/* Task Name */}
           <div>
             <label htmlFor="task-modal-title-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
@@ -251,13 +237,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </label>
               <select
                 id="task-modal-project-select"
-                value={project}
-                onChange={(e) => setProject(e.target.value)}
+                value={projectId}
+                onChange={(e) => { setProjectId(e.target.value); setCampaignId(''); }}
                 className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
               >
+                <option value="">No project</option>
                 {availableProjects.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
+                  <option key={p.id} value={p.id}>
+                    {p.name}
                   </option>
                 ))}
               </select>
@@ -269,13 +256,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </label>
               <select
                 id="task-modal-campaign-select"
-                value={campaign}
-                onChange={(e) => setCampaign(e.target.value)}
+                value={campaignId}
+                onChange={(e) => setCampaignId(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
               >
-                {availableCampaigns.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                <option value="">No campaign</option>
+                {availableCampaigns.filter((campaignOption) => !projectId || campaignOption.project_id === projectId).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -290,13 +278,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
               </label>
               <select
                 id="task-modal-assignee-select"
-                value={assigneeName}
-                onChange={(e) => setAssigneeName(e.target.value)}
+                value={assigneeId}
+                onChange={(e) => setAssigneeId(e.target.value)}
                 className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
               >
-                {teamMembers.map((member) => (
-                  <option key={member.name} value={member.name}>
-                    {member.name}
+                <option value="">Unassigned</option>
+                {availableAssignees.map((assignee) => (
+                  <option key={assignee.id} value={assignee.id}>
+                    {assignee.name}
                   </option>
                 ))}
               </select>
@@ -369,9 +358,10 @@ export const TaskModal: React.FC<TaskModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-2 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs"
+              disabled={isSaving}
+              className="px-4 py-2 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs disabled:opacity-50"
             >
-              {initialTask ? 'Save Changes' : 'Create Task'}
+              {isSaving ? 'Saving…' : initialTask ? 'Save Changes' : 'Create Task'}
             </button>
           </div>
         </form>

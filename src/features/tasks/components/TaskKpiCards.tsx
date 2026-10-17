@@ -5,9 +5,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronRight,
-  TrendingUp,
 } from 'lucide-react';
-import { demoKpiComparisons } from '../tasksData';
 
 interface TaskKpiCardsProps {
   totalCount: number;
@@ -31,8 +29,6 @@ export const TaskKpiCards: React.FC<TaskKpiCardsProps> = ({
       id: 'total',
       label: 'Total Tasks',
       value: totalCount,
-      change: demoKpiComparisons.totalTasksChange,
-      changeColor: 'text-[#0D9488]',
       icon: CheckSquare,
       iconBg: 'bg-[#F5F3FF]',
       iconColor: 'text-[#6D28D9]',
@@ -42,8 +38,6 @@ export const TaskKpiCards: React.FC<TaskKpiCardsProps> = ({
       id: 'in-progress',
       label: 'In Progress',
       value: inProgressCount,
-      change: demoKpiComparisons.inProgressChange,
-      changeColor: 'text-[#0D9488]',
       icon: Loader2,
       iconBg: 'bg-[#EFF6FF]',
       iconColor: 'text-[#2563EB]',
@@ -53,8 +47,6 @@ export const TaskKpiCards: React.FC<TaskKpiCardsProps> = ({
       id: 'completed',
       label: 'Completed',
       value: completedCount,
-      change: demoKpiComparisons.completedChange,
-      changeColor: 'text-[#0D9488]',
       icon: CheckCircle2,
       iconBg: 'bg-[#ECFDF5]',
       iconColor: 'text-[#0D9488]',
@@ -64,8 +56,6 @@ export const TaskKpiCards: React.FC<TaskKpiCardsProps> = ({
       id: 'overdue',
       label: 'Overdue',
       value: overdueCount,
-      change: demoKpiComparisons.overdueChange,
-      changeColor: 'text-[#EF4444]',
       icon: AlertCircle,
       iconBg: 'bg-[#FEF2F2]',
       iconColor: 'text-[#EF4444]',
@@ -108,11 +98,7 @@ export const TaskKpiCards: React.FC<TaskKpiCardsProps> = ({
               <ChevronRight className="w-4 h-4 text-[#94A3B8] mt-1 shrink-0" />
             </div>
 
-            <div className="flex items-center gap-1.5 mt-3 text-xs">
-              <TrendingUp className={`w-3.5 h-3.5 ${card.changeColor}`} />
-              <span className={`font-semibold ${card.changeColor}`}>{card.change}</span>
-              <span className="text-[#94A3B8]">from last month</span>
-            </div>
+            <div className="mt-3 text-xs text-[#94A3B8]">Current workspace</div>
           </div>
         );
       })}

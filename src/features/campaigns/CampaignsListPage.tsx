@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Megaphone,
@@ -21,26 +21,73 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import type { CampaignItem, CampaignStatus } from './types';
-import { initialCampaignsList } from './campaignsData';
 import { CreateCampaignModal } from './components/CreateCampaignModal';
+import { campaignService, type CampaignRecord } from './campaignService';
+import { projectService, type ProjectRecord } from '../projects/projectService';
+import { ApiError } from '../api/apiClient';
 
-const STORAGE_KEY = 'marketflow_campaigns_v1';
+function toCampaignItem(record: CampaignRecord, project: ProjectRecord | undefined, workspaceName: string): CampaignItem {
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description || '',
+    workspaceId: record.workspace_id,
+    workspaceName,
+    projectId: record.project_id,
+    projectName: project?.name || 'Project',
+    platform: record.platform,
+    channel: record.channel,
+    startDate: record.start_date,
+    endDate: record.end_date,
+    periodLabel: `${record.start_date} – ${record.end_date}`,
+    adBudget: Number(record.budget),
+    adSpend: Number(record.spend),
+    leads: record.leads,
+    acquiredCustomers: record.customers,
+    revenue: Number(record.revenue),
+    status: record.status,
+    objectiveType: record.objective || undefined,
+  };
+}
 
 export const CampaignsListPage: React.FC = () => {
-  const { currentWorkspace } = useWorkspace();
+  const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Local state persisted in localStorage
-  const [campaigns, setCampaigns] = useState<CampaignItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch {
-      // fallback
+  const reloadCampaigns = useCallback(async () => {
+    if (!hasWorkspace) {
+      setCampaigns([]);
+      setProjects([]);
+      setIsLoading(false);
+      return;
     }
-    return initialCampaignsList;
-  });
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [records, workspaceProjects] = await Promise.all([
+        campaignService.list(currentWorkspace.id),
+        projectService.list(currentWorkspace.id),
+      ]);
+      setProjects(workspaceProjects);
+      const projectById = new Map(workspaceProjects.map((project) => [project.id, project]));
+      setCampaigns(records.map((record) => toCampaignItem(record, projectById.get(record.project_id), currentWorkspace.name)));
+    } catch (error) {
+      setCampaigns([]);
+      setProjects([]);
+      setLoadError(error instanceof Error ? error.message : 'Unable to load campaigns.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasWorkspace, currentWorkspace.id, currentWorkspace.name]);
+
+  useEffect(() => {
+    if (!isLoadingWorkspaces) void reloadCampaigns();
+  }, [isLoadingWorkspaces, reloadCampaigns]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -59,24 +106,8 @@ export const CampaignsListPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 10;
 
-  // Persist to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(campaigns));
-    } catch {
-      // ignore
-    }
-  }, [campaigns]);
-
-  // Filter campaigns by active workspace; displays empty state when workspace has no campaigns
-  const workspaceCampaigns = useMemo(() => {
-    if (!currentWorkspace) return campaigns;
-    return campaigns.filter(
-      (c) =>
-        c.workspaceId === currentWorkspace.id ||
-        c.workspaceName === currentWorkspace.name
-    );
-  }, [campaigns, currentWorkspace]);
+  const workspaceCampaigns = campaigns;
+  const currency = currentWorkspace.currency || '';
 
   // Derived KPI metrics
   const activeCount = useMemo(() => {
@@ -157,51 +188,69 @@ export const CampaignsListPage: React.FC = () => {
   }, [filteredCampaigns, currentPage, pageSize]);
 
   // Handlers
-  const handleSaveCampaign = (campaignData: Partial<CampaignItem>) => {
-    if (editingCampaign) {
-      setCampaigns((prev) =>
-        prev.map((c) => (c.id === editingCampaign.id ? ({ ...c, ...campaignData } as CampaignItem) : c))
-      );
-      setEditingCampaign(null);
-    } else {
-      const newId = (campaignData.name || 'campaign')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-') + `-${Date.now().toString().slice(-4)}`;
-      const newCampaign: CampaignItem = {
-        id: newId,
-        name: campaignData.name || 'New Campaign',
-        description: campaignData.description || '',
-        workspaceId: currentWorkspace?.id || 'ws-atlas-retail',
-        workspaceName: currentWorkspace?.name || 'Atlas Retail SARL',
-        projectId: campaignData.projectId || 'autumn-sales-growth',
-        projectName: campaignData.projectName || 'Autumn Sales Growth',
-        platform: campaignData.platform || 'Meta Ads',
-        channel: campaignData.channel || 'Meta Ads',
-        startDate: campaignData.startDate || '01 Nov 2026',
-        endDate: campaignData.endDate || '30 Nov 2026',
-        periodLabel: `${campaignData.startDate} – ${campaignData.endDate}`,
-        adBudget: campaignData.adBudget || 5000,
-        adSpend: 0,
-        leads: 0,
-        status: (campaignData.status as CampaignStatus) || 'Active',
+  const handleSaveCampaign = async (campaignData: Partial<CampaignItem>) => {
+    if (!hasWorkspace || !campaignData.projectId || !campaignData.name || !campaignData.startDate || !campaignData.endDate || !campaignData.platform) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const payload = {
+        project_id: campaignData.projectId,
+        name: campaignData.name,
+        description: campaignData.description || null,
+        platform: campaignData.platform,
+        channel: campaignData.channel || campaignData.platform,
+        objective: campaignData.objectiveType || null,
+        start_date: campaignData.startDate,
+        end_date: campaignData.endDate,
+        status: campaignData.status || 'Planned',
+        budget: campaignData.adBudget ?? 0,
       };
-      setCampaigns((prev) => [newCampaign, ...prev]);
+      const saved = editingCampaign
+        ? await campaignService.update(currentWorkspace.id, editingCampaign.id, payload)
+        : await campaignService.create(currentWorkspace.id, payload);
+      const savedProject = projects.find((project) => project.id === saved.project_id);
+      const mapped = toCampaignItem(saved, savedProject, currentWorkspace.name);
+      setCampaigns((prev) => editingCampaign
+        ? prev.map((campaign) => campaign.id === mapped.id ? mapped : campaign)
+        : [mapped, ...prev]);
+      setIsCreateModalOpen(false);
+      setEditingCampaign(null);
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to save campaign.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleArchive = (id: string) => {
-    setCampaigns((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, status: 'Archived' as CampaignStatus } : c))
-    );
+  const handleArchive = async (id: string) => {
+    if (!hasWorkspace) return;
     setActiveMenuId(null);
-  };
-
-  const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      setCampaigns((prev) => prev.filter((c) => c.id !== id));
-      setActiveMenuId(null);
+    try {
+      const saved = await campaignService.update(currentWorkspace.id, id, { status: 'Archived' });
+      const project = projects.find((item) => item.id === saved.project_id);
+      const mapped = toCampaignItem(saved, project, currentWorkspace.name);
+      setCampaigns((prev) => prev.map((item) => item.id === id ? mapped : item));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to archive campaign.');
     }
   };
+
+  const handleDelete = async (id: string) => {
+    if (!hasWorkspace || !window.confirm('Are you sure you want to delete this campaign?')) return;
+    try {
+      await campaignService.remove(currentWorkspace.id, id);
+      setCampaigns((prev) => prev.filter((campaign) => campaign.id !== id));
+      setActiveMenuId(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to delete campaign.');
+    }
+  };
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, platformFilter]);
 
   // Channel icon helper
   const renderChannelIcon = (channel: string) => {
@@ -290,17 +339,33 @@ export const CampaignsListPage: React.FC = () => {
           </div>
           <button
             type="button"
+            disabled={!hasWorkspace || projects.length === 0 || isLoading || isSaving}
             onClick={() => {
               setEditingCampaign(null);
+              setActionError(null);
               setIsCreateModalOpen(true);
             }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors self-start sm:self-auto"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors self-start sm:self-auto disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             <span>New Campaign</span>
           </button>
         </div>
       </div>
+
+      {(loadError || actionError) && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <span>{loadError || actionError}</span>
+          {loadError && <button type="button" onClick={() => void reloadCampaigns()} className="font-semibold underline">Retry</button>}
+          {actionError && <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss error">×</button>}
+        </div>
+      )}
+      {!isLoadingWorkspaces && !hasWorkspace && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Select or create an active workspace before managing campaigns.</div>
+      )}
+      {hasWorkspace && !isLoading && projects.length === 0 && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Create a project in this workspace before adding a campaign.</div>
+      )}
 
       {/* 4 KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -340,7 +405,7 @@ export const CampaignsListPage: React.FC = () => {
           </div>
           <div className="mt-4">
             <div className="text-2xl font-bold text-[#1E1B4B]">
-              {plannedBudgetSum.toLocaleString()} MAD
+              {plannedBudgetSum.toLocaleString()} {currency}
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -362,7 +427,7 @@ export const CampaignsListPage: React.FC = () => {
           </div>
           <div className="mt-4">
             <div className="text-2xl font-bold text-[#1E1B4B]">
-              {adSpendSum.toLocaleString()} MAD
+              {adSpendSum.toLocaleString()} {currency}
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -566,7 +631,9 @@ export const CampaignsListPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9] text-xs">
-              {paginatedCampaigns.length === 0 ? (
+              {isLoading || isLoadingWorkspaces ? (
+                <tr><td colSpan={7} className="py-12 text-center text-xs text-[#64748B]">Loading campaigns…</td></tr>
+              ) : paginatedCampaigns.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-[#64748B]">
                     <div className="flex flex-col items-center justify-center">
@@ -599,7 +666,7 @@ export const CampaignsListPage: React.FC = () => {
                       <div className="flex items-center gap-1.5">
                         <FolderGit2 className="w-3.5 h-3.5 text-[#6D28D9] shrink-0" />
                         <Link
-                          to={`/projects/${c.projectId || 'autumn-sales-growth'}`}
+                          to={`/projects/${c.projectId}`}
                           className="text-[#1E1B4B] hover:text-[#6D28D9] hover:underline transition-colors font-medium"
                         >
                           {c.projectName}
@@ -623,12 +690,12 @@ export const CampaignsListPage: React.FC = () => {
 
                     {/* Ad Budget */}
                     <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B] font-medium">
-                      {c.adBudget.toLocaleString()} MAD
+                      {c.adBudget.toLocaleString()} {currency}
                     </td>
 
                     {/* Ad Spend */}
                     <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B] font-medium">
-                      {c.adSpend.toLocaleString()} MAD
+                      {c.adSpend.toLocaleString()} {currency}
                     </td>
 
                     {/* Leads */}
@@ -772,7 +839,10 @@ export const CampaignsListPage: React.FC = () => {
         }}
         onSave={handleSaveCampaign}
         initialCampaign={editingCampaign}
-        workspaceName={currentWorkspace?.name || 'Atlas Retail SARL'}
+        workspaceName={currentWorkspace.name}
+        projects={projects}
+        isSaving={isSaving}
+        saveError={actionError}
       />
     </div>
   );

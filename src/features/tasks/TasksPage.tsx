@@ -1,70 +1,105 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useWorkspace } from '../../context/WorkspaceContext';
+import { useAuth } from '../../context/AuthContext';
+import { projectService, type ProjectRecord } from '../projects/projectService';
+import { campaignService, type CampaignRecord } from '../campaigns/campaignService';
+import { taskService, type TaskRecord } from './taskService';
+import { ApiError } from '../api/apiClient';
 import { TaskKpiCards } from './components/TaskKpiCards';
 import { TasksToolbar } from './components/TasksToolbar';
 import { TasksTable } from './components/TasksTable';
 import { TaskDetailsPanel } from './components/TaskDetailsPanel';
 import { TasksBoardView } from './components/TasksBoardView';
 import { TaskModal } from './components/TaskModal';
-import { initialTasks } from './tasksData';
 import type { TaskItem } from './types';
+
+function toTaskItem(
+  record: TaskRecord,
+  projectsById: Map<string, ProjectRecord>,
+  campaignsById: Map<string, CampaignRecord>,
+): TaskItem {
+  const assigneeName = record.assignee?.name || 'Unassigned';
+  return {
+    id: record.id,
+    workspaceId: record.workspace_id,
+    title: record.title,
+    description: record.description || '',
+    projectId: record.project_id || undefined,
+    project: record.project?.name || projectsById.get(record.project_id || '')?.name || '',
+    campaignId: record.campaign_id || undefined,
+    campaign: record.campaign?.name || campaignsById.get(record.campaign_id || '')?.name || '',
+    assigneeId: record.assignee_id || undefined,
+    assignee: {
+      id: record.assignee?.id,
+      name: assigneeName,
+      initials: assigneeName === 'Unassigned' ? '—' : assigneeName.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
+    },
+    priority: record.priority,
+    dueDate: record.due_date,
+    status: record.status,
+    checklist: [],
+    comments: [],
+    attachments: [],
+    createdAt: record.created_at,
+  };
+}
 
 export const TasksPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentWorkspace, projects: workspaceProjects } = useWorkspace();
+  const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
+  const { user } = useAuth();
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
-  const storageKey = `marketflow_tasks_${currentWorkspace?.id || 'ws-atlas-retail'}`;
-
-  // Tasks state scoped to workspace
-  const [tasks, setTasks] = useState<TaskItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
+  const reloadTasks = useCallback(async () => {
+    if (!hasWorkspace) {
+      setTasks([]);
+      setProjects([]);
+      setCampaigns([]);
+      setIsLoading(false);
+      return;
     }
-    return initialTasks;
-  });
-
-  // Re-sync tasks if workspace changes (render-phase state adjustment avoids cascading renders)
-  const [prevStorageKey, setPrevStorageKey] = useState(storageKey);
-  if (storageKey !== prevStorageKey) {
-    setPrevStorageKey(storageKey);
-    let loaded = initialTasks;
+    setIsLoading(true);
+    setLoadError(null);
     try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          loaded = parsed;
-        }
-      }
-    } catch {
-      // ignore
+      const [taskRecords, projectRecords, campaignRecords] = await Promise.all([
+        taskService.list(currentWorkspace.id),
+        projectService.list(currentWorkspace.id),
+        campaignService.list(currentWorkspace.id),
+      ]);
+      setProjects(projectRecords);
+      setCampaigns(campaignRecords);
+      const projectsById = new Map(projectRecords.map((project) => [project.id, project]));
+      const campaignsById = new Map(campaignRecords.map((campaign) => [campaign.id, campaign]));
+      const nextTasks = taskRecords.map((record) => toTaskItem(record, projectsById, campaignsById));
+      setTasks(nextTasks);
+      setSelectedTaskId((selectedId) => nextTasks.some((task) => task.id === selectedId) ? selectedId : nextTasks[0]?.id || null);
+    } catch (error) {
+      setTasks([]);
+      setProjects([]);
+      setCampaigns([]);
+      setLoadError(error instanceof Error ? error.message : 'Unable to load tasks.');
+    } finally {
+      setIsLoading(false);
     }
-    setTasks(loaded);
-  }
+  }, [hasWorkspace, currentWorkspace.id]);
 
-  // Save to localStorage whenever tasks change
   useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(tasks));
-    } catch {
-      // ignore
-    }
-  }, [tasks, storageKey]);
+    if (!isLoadingWorkspaces) void reloadTasks();
+  }, [isLoadingWorkspaces, reloadTasks]);
 
-  // Selected task state (default to Review creative assets / task-1)
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>('task-1');
   const [isDetailsPanelOpen, setIsDetailsPanelOpen] = useState(true);
 
   // Checked tasks for table checkboxes
-  const [checkedTaskIds, setCheckedTaskIds] = useState<string[]>(['task-1']);
+  const [checkedTaskIds, setCheckedTaskIds] = useState<string[]>([]);
 
   // View mode: 'list' or 'board'
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list');
@@ -94,25 +129,24 @@ export const TasksPage: React.FC = () => {
 
   // Available dropdown options
   const availableAssignees = useMemo(() => {
-    const set = new Set<string>();
-    tasks.forEach((t) => set.add(t.assignee.name));
-    return Array.from(set);
-  }, [tasks]);
+    const assignees = new Map<number, string>();
+    const currentUserId = Number(user?.id);
+    if (Number.isSafeInteger(currentUserId) && currentUserId > 0 && user?.name) {
+      assignees.set(currentUserId, user.name);
+    }
+    tasks.forEach((task) => {
+      if (task.assigneeId) assignees.set(task.assigneeId, task.assignee.name);
+    });
+    return Array.from(assignees, ([id, name]) => ({ id, name }));
+  }, [tasks, user]);
 
   const availableProjects = useMemo(() => {
-    const set = new Set<string>();
-    tasks.forEach((t) => set.add(t.project));
-    if (workspaceProjects && workspaceProjects.length > 0) {
-      workspaceProjects.forEach((p) => set.add(p.name));
-    }
-    return Array.from(set);
-  }, [tasks, workspaceProjects]);
+    return projects.map((project) => ({ id: project.id, name: project.name }));
+  }, [projects]);
 
   const availableCampaigns = useMemo(() => {
-    const set = new Set<string>();
-    tasks.forEach((t) => set.add(t.campaign));
-    return Array.from(set);
-  }, [tasks]);
+    return campaigns.map((campaign) => ({ id: campaign.id, name: campaign.name, project_id: campaign.project_id }));
+  }, [campaigns]);
 
   // Derived KPI Counts
   const totalCount = tasks.length;
@@ -238,64 +272,106 @@ export const TasksPage: React.FC = () => {
   };
 
   // Update existing task
-  const handleUpdateTask = (updatedTask: TaskItem) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === updatedTask.id ? updatedTask : t))
-    );
+  const handleUpdateTask = async (updatedTask: TaskItem) => {
+    if (!hasWorkspace) return;
+    setActionError(null);
+    try {
+      const saved = await taskService.update(currentWorkspace.id, updatedTask.id, {
+        title: updatedTask.title,
+        description: updatedTask.description || null,
+        project_id: updatedTask.projectId || null,
+        campaign_id: updatedTask.campaignId || null,
+        assignee_id: updatedTask.assigneeId || null,
+        priority: updatedTask.priority,
+        status: updatedTask.status,
+        due_date: updatedTask.dueDate,
+      });
+      const projectsById = new Map(projects.map((project) => [project.id, project]));
+      const campaignsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+      setTasks((prev) => prev.map((task) => task.id === saved.id ? toTaskItem(saved, projectsById, campaignsById) : task));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to update task.');
+    }
   };
 
   // Delete task
-  const handleDeleteTask = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    setCheckedTaskIds((prev) => prev.filter((itemId) => itemId !== id));
-    if (selectedTaskId === id) {
-      const remaining = tasks.filter((t) => t.id !== id);
-      setSelectedTaskId(remaining[0]?.id || null);
+  const handleDeleteTask = async (id: string) => {
+    if (!hasWorkspace || !window.confirm('Are you sure you want to delete this task?')) return;
+    setActionError(null);
+    try {
+      await taskService.remove(currentWorkspace.id, id);
+      const remaining = tasks.filter((task) => task.id !== id);
+      setTasks(remaining);
+      setSelectedTaskId((selectedId) => selectedId === id ? remaining[0]?.id || null : selectedId);
+      setCheckedTaskIds((prev) => prev.filter((itemId) => itemId !== id));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to delete task.');
     }
-    showToast('Task removed successfully');
   };
 
   // Save new task
-  const handleCreateTask = (newTaskData: Partial<TaskItem>) => {
-    const newTask: TaskItem = {
-      id: `task-${Date.now()}`,
-      workspaceId: currentWorkspace?.id || 'ws-atlas-retail',
-      title: newTaskData.title || 'Untitled Task',
-      description: newTaskData.description || '',
-      project: newTaskData.project || 'Autumn Sales Growth',
-      campaign: newTaskData.campaign || 'Autumn Launch 2026',
-      assignee: newTaskData.assignee || initialTasks[0].assignee,
-      priority: newTaskData.priority || 'Medium',
-      dueDate: newTaskData.dueDate || '25 Oct 2026',
-      status: newTaskData.status || 'In Progress',
-      checklist: [],
-      comments: [],
-      attachments: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    setTasks((prev) => [newTask, ...prev]);
-    setSelectedTaskId(newTask.id);
-    setIsDetailsPanelOpen(true);
-    showToast('Task created successfully');
+  const handleCreateTask = async (newTaskData: Partial<TaskItem>) => {
+    if (!hasWorkspace || !newTaskData.title || !newTaskData.dueDate) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const saved = await taskService.create(currentWorkspace.id, {
+        title: newTaskData.title,
+        description: newTaskData.description || null,
+        project_id: newTaskData.projectId || null,
+        campaign_id: newTaskData.campaignId || null,
+        assignee_id: newTaskData.assigneeId || null,
+        priority: newTaskData.priority || 'Medium',
+        due_date: newTaskData.dueDate,
+        status: newTaskData.status || 'To Do',
+      });
+      setSelectedTaskId(saved.id);
+      setIsDetailsPanelOpen(true);
+      await reloadTasks();
+      setIsCreateModalOpen(false);
+      showToast('Task created successfully');
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to create task.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Edit existing task
-  const handleSaveEditedTask = (taskData: Partial<TaskItem>) => {
-    if (!editingTask) return;
-    const updated: TaskItem = {
-      ...editingTask,
-      ...taskData,
-    };
-    handleUpdateTask(updated);
-    setEditingTask(null);
-    showToast('Task updated successfully');
+  const handleSaveEditedTask = async (taskData: Partial<TaskItem>) => {
+    if (!editingTask || !hasWorkspace) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const saved = await taskService.update(currentWorkspace.id, editingTask.id, {
+        title: taskData.title || editingTask.title,
+        description: taskData.description || null,
+        project_id: taskData.projectId || null,
+        campaign_id: taskData.campaignId || null,
+        assignee_id: taskData.assigneeId || null,
+        priority: taskData.priority || editingTask.priority,
+        due_date: taskData.dueDate || editingTask.dueDate,
+        status: taskData.status || editingTask.status,
+      });
+      const projectsById = new Map(projects.map((project) => [project.id, project]));
+      const campaignsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
+      setTasks((prev) => prev.map((task) => task.id === saved.id ? toTaskItem(saved, projectsById, campaignsById) : task));
+      setEditingTask(null);
+      showToast('Task updated successfully');
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to update task.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Navigate to Campaign
-  const handleViewCampaign = (campaignName: string) => {
-    navigate('/campaigns');
-    showToast(`Navigated to campaign: ${campaignName}`);
+  const handleViewCampaign = (campaignId: string) => {
+    navigate(`/campaigns/${campaignId}`);
   };
 
   return (
@@ -325,13 +401,25 @@ export const TasksPage: React.FC = () => {
 
         <button
           type="button"
+          disabled={!hasWorkspace || isLoading || isSaving}
           onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs self-start sm:self-auto disabled:opacity-50"
         >
           <Plus className="w-4 h-4" />
           <span>New Task</span>
         </button>
       </div>
+
+      {(loadError || actionError) && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <span>{loadError || actionError}</span>
+          {loadError && <button type="button" onClick={() => void reloadTasks()} className="font-semibold underline">Retry</button>}
+          {actionError && <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss error">×</button>}
+        </div>
+      )}
+      {!isLoadingWorkspaces && !hasWorkspace && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Select or create an active workspace before managing tasks.</div>
+      )}
 
       {/* 4 KPI Summary Cards */}
       <TaskKpiCards
@@ -361,12 +449,14 @@ export const TasksPage: React.FC = () => {
             onStatusChange={setStatusFilter}
             projectFilter={projectFilter}
             onProjectChange={setProjectFilter}
-            availableAssignees={availableAssignees}
-            availableProjects={availableProjects}
+            availableAssignees={availableAssignees.map((assignee) => assignee.name)}
+            availableProjects={availableProjects.map((project) => project.name)}
           />
 
           {/* List View or Board View */}
-          {viewMode === 'list' ? (
+          {isLoading || isLoadingWorkspaces ? (
+            <div role="status" className="rounded-xl border border-[#E2E8F0] bg-white p-10 text-center text-xs text-[#64748B]">Loading tasks…</div>
+          ) : viewMode === 'list' ? (
             <TasksTable
               tasks={paginatedTasks}
               totalTasksCount={filteredTasks.length}
@@ -388,7 +478,7 @@ export const TasksPage: React.FC = () => {
               onSelectTask={handleSelectTask}
               onStatusChange={(id, status) => {
                 const t = tasks.find((item) => item.id === id);
-                if (t) handleUpdateTask({ ...t, status });
+                if (t) void handleUpdateTask({ ...t, status });
               }}
             />
           )}
@@ -416,6 +506,9 @@ export const TasksPage: React.FC = () => {
         onSave={handleCreateTask}
         availableProjects={availableProjects}
         availableCampaigns={availableCampaigns}
+        availableAssignees={availableAssignees}
+        isSaving={isSaving}
+        saveError={actionError}
       />
 
       {/* Edit Task Modal */}
@@ -426,6 +519,9 @@ export const TasksPage: React.FC = () => {
         initialTask={editingTask}
         availableProjects={availableProjects}
         availableCampaigns={availableCampaigns}
+        availableAssignees={availableAssignees}
+        isSaving={isSaving}
+        saveError={actionError}
       />
     </div>
   );

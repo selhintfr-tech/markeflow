@@ -29,6 +29,7 @@ export interface TaskAttachment {
 }
 
 export interface TaskAssignee {
+  id?: number;
   name: string;
   initials: string;
   avatarUrl?: string;
@@ -45,6 +46,7 @@ export interface TaskItem {
   projectId?: string;
   campaign: string;
   campaignId?: string;
+  assigneeId?: number;
   assignee: TaskAssignee;
   priority: TaskPriority;
   dueDate: string;

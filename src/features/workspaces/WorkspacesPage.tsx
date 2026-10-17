@@ -22,6 +22,10 @@ export const WorkspacesPage: React.FC = () => {
   const {
     workspaces,
     currentWorkspace,
+    hasWorkspace,
+    isLoadingWorkspaces,
+    workspaceError,
+    reloadWorkspaces,
     setCurrentWorkspace,
     addWorkspace,
     updateWorkspace,
@@ -40,12 +44,12 @@ export const WorkspacesPage: React.FC = () => {
   const [activeMenuWorkspaceId, setActiveMenuWorkspaceId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Form State (New Workspace)
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [newLocation, setNewLocation] = useState('Casablanca, Morocco');
-  const [newStatus, setNewStatus] = useState('Active');
+  const [newLocation, setNewLocation] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form State (Edit Workspace)
@@ -89,25 +93,31 @@ export const WorkspacesPage: React.FC = () => {
     });
   }, [workspaces, searchQuery, statusFilter]);
 
-  const handleCreateWorkspace = (e: React.FormEvent) => {
+  const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) {
       setFormError('Workspace name is required.');
       return;
     }
-    const created = addWorkspace({
-      name: newName.trim(),
-      description: newDescription.trim() || 'Marketing workspace',
-      location: newLocation.trim() || 'Casablanca, Morocco',
-      status: newStatus,
-    });
-    setNewName('');
-    setNewDescription('');
-    setNewLocation('Casablanca, Morocco');
-    setNewStatus('Active');
-    setFormError(null);
-    setIsNewModalOpen(false);
-    showToast(`Workspace "${created.name}" created successfully.`);
+    try {
+      setActionError(null);
+      const created = await addWorkspace({
+        name: newName.trim(),
+        industry: newDescription.trim() || null,
+        location: newLocation.trim() || null,
+        business_type: 'general_business',
+      });
+      setNewName('');
+      setNewDescription('');
+      setNewLocation('');
+      setFormError(null);
+      setIsNewModalOpen(false);
+      showToast(`Workspace "${created.name}" created successfully.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create workspace.';
+      setFormError(message);
+      setActionError(message);
+    }
   };
 
   const openEditModal = (ws: WorkspaceDetail) => {
@@ -120,26 +130,38 @@ export const WorkspacesPage: React.FC = () => {
     setIsEditModalOpen(true);
   };
 
-  const handleUpdateWorkspace = (e: React.FormEvent) => {
+  const handleUpdateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingWorkspace || !editName.trim()) return;
-    updateWorkspace(editingWorkspace.id, {
-      name: editName.trim(),
-      description: editDescription.trim(),
-      location: editLocation.trim(),
-      status: editStatus,
-    });
-    setIsEditModalOpen(false);
-    setEditingWorkspace(null);
-    showToast(`Workspace "${editName.trim()}" updated successfully.`);
+    try {
+      setActionError(null);
+      await updateWorkspace(editingWorkspace.id, {
+        name: editName.trim(),
+        industry: editDescription.trim() || null,
+        location: editLocation.trim() || null,
+        status: editStatus,
+      });
+      setIsEditModalOpen(false);
+      setEditingWorkspace(null);
+      showToast(`Workspace "${editName.trim()}" updated successfully.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update workspace.';
+      setFormError(message);
+      setActionError(message);
+    }
   };
 
-  const handleDeleteWorkspace = (id: string) => {
-    const success = deleteWorkspace(id);
-    if (!success) {
+  const handleDeleteWorkspace = async (id: string) => {
+    if (workspaces.length <= 1) {
       showToast('Cannot delete the only remaining workspace.');
     } else {
-      showToast('Workspace deleted.');
+      try {
+        setActionError(null);
+        await deleteWorkspace(id);
+        showToast('Workspace deleted.');
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : 'Unable to delete workspace.');
+      }
     }
     setDeleteConfirmId(null);
     setActiveMenuWorkspaceId(null);
@@ -158,6 +180,20 @@ export const WorkspacesPage: React.FC = () => {
         <div className="fixed bottom-6 right-6 z-50 bg-[#1E1B4B] text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-3 duration-200">
           <Check className="w-4 h-4 text-[#10B981] stroke-[2.5]" />
           <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {workspaceError && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700 flex items-center justify-between gap-3">
+          <span>{workspaceError}</span>
+          <button type="button" onClick={() => void reloadWorkspaces()} className="font-semibold underline">Retry</button>
+        </div>
+      )}
+      {actionError && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">{actionError}</div>}
+
+      {!hasWorkspace && !isLoadingWorkspaces && !workspaceError && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800" role="status">
+          No accessible workspace is available. Create a workspace to use workspace-scoped projects, campaigns and tasks.
         </div>
       )}
 
@@ -266,7 +302,11 @@ export const WorkspacesPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F8FAFC]">
-              {filteredWorkspaces.map((ws) => {
+              {isLoadingWorkspaces ? (
+                <tr><td colSpan={6} className="py-12 text-center text-sm text-[#64748B]">Loading workspaces…</td></tr>
+              ) : filteredWorkspaces.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center text-sm text-[#64748B]">No workspaces match your search.</td></tr>
+              ) : filteredWorkspaces.map((ws) => {
                 const isCurrent = ws.id === currentWorkspace.id;
                 const isNova = ws.id === 'ws-nova-studio' || ws.iconType === 'users';
 
@@ -348,14 +388,14 @@ export const WorkspacesPage: React.FC = () => {
                           )}
                         </div>
                         <span className="text-xs font-bold text-[#1E1B4B] ml-1">
-                          {ws.membersCount}
+                          {ws.membersCount ?? '—'}
                         </span>
                       </div>
                     </td>
 
                     {/* Projects Column */}
                     <td className="py-4 px-6 text-xs font-semibold text-[#1E1B4B]">
-                      {ws.projectsCount}
+                      {ws.projectsCount ?? '—'}
                     </td>
 
                     {/* Status Column */}
@@ -495,11 +535,11 @@ export const WorkspacesPage: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="new-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="new-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Industry</label>
                 <input
                   id="new-workspace-desc-input"
                   type="text"
-                  placeholder="e.g. Retail and omnichannel marketing operations"
+                  placeholder="e.g. Retail"
                   value={newDescription}
                   onChange={(e) => setNewDescription(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] focus:border-[#6D28D9] focus:ring-1 focus:ring-[#6D28D9] outline-none"
@@ -518,14 +558,7 @@ export const WorkspacesPage: React.FC = () => {
                 </div>
                 <div>
                   <label className="block font-semibold text-[#1E1B4B] mb-1">Status</label>
-                  <select
-                    value={newStatus}
-                    onChange={(e) => setNewStatus(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] focus:border-[#6D28D9] focus:ring-1 focus:ring-[#6D28D9] outline-none bg-white"
-                  >
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                  <input disabled value="Active" className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] bg-slate-50 text-[#64748B]" />
                 </div>
               </div>
 
@@ -578,7 +611,7 @@ export const WorkspacesPage: React.FC = () => {
               </div>
 
               <div>
-                <label htmlFor="edit-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Description</label>
+                <label htmlFor="edit-workspace-desc-input" className="block font-semibold text-[#1E1B4B] mb-1">Industry</label>
                 <input
                   id="edit-workspace-desc-input"
                   type="text"
@@ -607,7 +640,8 @@ export const WorkspacesPage: React.FC = () => {
                     className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] focus:border-[#6D28D9] focus:ring-1 focus:ring-[#6D28D9] outline-none bg-white"
                   >
                     <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
+                    <option value="Archived">Archived</option>
+                    <option value="Suspended">Suspended</option>
                   </select>
                 </div>
               </div>

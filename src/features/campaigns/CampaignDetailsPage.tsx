@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight,
@@ -15,8 +15,6 @@ import {
   TrendingUp,
   ArrowDownRight,
   ArrowUpRight,
-  CheckCircle2,
-  CircleDot,
   Database,
   Info,
   Activity,
@@ -37,40 +35,27 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useWorkspace } from '../../context/WorkspaceContext';
-import type {
-  CampaignItem,
-  CampaignObjective,
-  CampaignActivityItem,
-  SpendPerformancePoint,
-} from './types';
-import {
-  initialCampaignsList,
-  initialSpendPerformanceData,
-  initialCampaignObjectives,
-  initialCampaignActivity,
-} from './campaignsData';
+import type { CampaignItem, SpendPerformancePoint } from './types';
 import { CreateCampaignModal } from './components/CreateCampaignModal';
 import { AddResultsModal } from './components/AddResultsModal';
-import { EditObjectivesModal } from './components/EditObjectivesModal';
-
-const STORAGE_KEY = 'marketflow_campaigns_v1';
-const OBJECTIVES_KEY = 'marketflow_campaign_objectives_v1';
-const ACTIVITY_KEY = 'marketflow_campaign_activity_v1';
+import { campaignService } from './campaignService';
+import { projectService, type ProjectRecord } from '../projects/projectService';
+import { ApiError } from '../api/apiClient';
 
 // Custom Recharts Tooltip
-const CustomSpendTooltip = ({ active, payload, label }: any) => {
+const CustomSpendTooltip = ({ active, payload, label, currency }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-white border border-[#E2E8F0] rounded-lg shadow-md p-2.5 text-xs">
         <p className="font-semibold text-[#1E1B4B] mb-1">{label}</p>
         <div className="flex items-center gap-2 text-[#6D28D9]">
           <span className="w-2 h-2 rounded-full bg-[#6D28D9]" />
-          <span>Actual spend: {payload[0]?.value?.toLocaleString()} MAD</span>
+          <span>Actual spend: {payload[0]?.value?.toLocaleString()} {currency}</span>
         </div>
         {payload[1] && (
           <div className="flex items-center gap-2 text-[#7C3AED] mt-0.5">
             <span className="w-2 h-2 rounded-full bg-[#A78BFA]" />
-            <span>Planned budget: {payload[1]?.value?.toLocaleString()} MAD</span>
+            <span>Planned budget: {payload[1]?.value?.toLocaleString()} {currency}</span>
           </div>
         )}
       </div>
@@ -82,171 +67,208 @@ const CustomSpendTooltip = ({ active, payload, label }: any) => {
 export const CampaignDetailsPage: React.FC = () => {
   const { campaignId } = useParams<{ campaignId: string }>();
   const navigate = useNavigate();
-  const { currentWorkspace } = useWorkspace();
+  const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
+  const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Campaign list from localStorage
-  const [campaigns, setCampaigns] = useState<CampaignItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
+  const reloadCampaigns = useCallback(async () => {
+    if (!hasWorkspace) {
+      setCampaigns([]);
+      setProjects([]);
+      setIsLoading(false);
+      return;
     }
-    return initialCampaignsList;
-  });
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [records, workspaceProjects] = await Promise.all([
+        campaignService.list(currentWorkspace.id),
+        projectService.list(currentWorkspace.id),
+      ]);
+      setProjects(workspaceProjects);
+      const projectById = new Map(workspaceProjects.map((project) => [project.id, project]));
+      setCampaigns(records.map((record) => ({
+        id: record.id,
+        name: record.name,
+        description: record.description || '',
+        workspaceId: record.workspace_id,
+        workspaceName: currentWorkspace.name,
+        projectId: record.project_id,
+        projectName: projectById.get(record.project_id)?.name || '',
+        platform: record.platform,
+        channel: record.channel,
+        startDate: record.start_date,
+        endDate: record.end_date,
+        periodLabel: `${record.start_date} – ${record.end_date}`,
+        adBudget: Number(record.budget),
+        adSpend: Number(record.spend),
+        leads: record.leads,
+        acquiredCustomers: record.customers,
+        revenue: Number(record.revenue),
+        status: record.status,
+        objectiveType: record.objective || undefined,
+      })));
+    } catch (error) {
+      setCampaigns([]);
+      setProjects([]);
+      setLoadError(error instanceof Error ? error.message : 'Unable to load campaign.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasWorkspace, currentWorkspace.id, currentWorkspace.name]);
+
+  useEffect(() => {
+    if (!isLoadingWorkspaces) void reloadCampaigns();
+  }, [isLoadingWorkspaces, reloadCampaigns]);
 
   // Current active campaign
   const campaign = useMemo(() => {
-    if (!campaignId) return campaigns[0] || initialCampaignsList[0];
-    const found = campaigns.find((c) => c.id === campaignId);
-    if (found) return found;
-    // Fallback to initial matching campaign or first campaign
-    const initMatch = initialCampaignsList.find((c) => c.id === campaignId);
-    return initMatch || campaigns[0] || initialCampaignsList[0];
+    if (!campaignId) return campaigns[0];
+    return campaigns.find((item) => item.id === campaignId);
   }, [campaignId, campaigns]);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<string>('Overview');
 
-  // Objectives state
-  const [objectives, setObjectives] = useState<CampaignObjective[]>(() => {
-    try {
-      const stored = localStorage.getItem(OBJECTIVES_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
-    }
-    return initialCampaignObjectives;
-  });
-
-  // Activity state
-  const [activities, setActivities] = useState<CampaignActivityItem[]>(() => {
-    try {
-      const stored = localStorage.getItem(ACTIVITY_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // fallback
-    }
-    return initialCampaignActivity;
-  });
-
-  // Spend chart curve data
-  const [chartData, setChartData] = useState<SpendPerformancePoint[]>(initialSpendPerformanceData);
+  const chartData: SpendPerformancePoint[] = [];
 
   // Modals state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddResultsOpen, setIsAddResultsOpen] = useState(false);
-  const [isEditObjectivesOpen, setIsEditObjectivesOpen] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
 
-  // Save changes to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(campaigns));
-    } catch {
-      // ignore
-    }
-  }, [campaigns]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(OBJECTIVES_KEY, JSON.stringify(objectives));
-    } catch {
-      // ignore
-    }
-  }, [objectives]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ACTIVITY_KEY, JSON.stringify(activities));
-    } catch {
-      // ignore
-    }
-  }, [activities]);
-
   // Handlers
-  const handleUpdateCampaign = (campaignData: Partial<CampaignItem>) => {
-    setCampaigns((prev) =>
-      prev.map((c) => (c.id === campaign.id ? ({ ...c, ...campaignData } as CampaignItem) : c))
-    );
+  const handleUpdateCampaign = async (campaignData: Partial<CampaignItem>) => {
+    if (!hasWorkspace || !campaign) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const saved = await campaignService.update(currentWorkspace.id, campaign.id, {
+        project_id: campaignData.projectId,
+        name: campaignData.name,
+        description: campaignData.description,
+        platform: campaignData.platform,
+        channel: campaignData.channel,
+        objective: campaignData.objectiveType || null,
+        start_date: campaignData.startDate,
+        end_date: campaignData.endDate,
+        status: campaignData.status,
+        budget: campaignData.adBudget,
+      });
+      const project = projects.find((item) => item.id === saved.project_id);
+      setCampaigns((prev) => prev.map((item) => item.id === campaign.id ? {
+        ...item,
+        name: saved.name,
+        description: saved.description || '',
+        projectId: saved.project_id,
+        projectName: project?.name || '',
+        platform: saved.platform,
+        channel: saved.channel,
+        startDate: saved.start_date,
+        endDate: saved.end_date,
+        periodLabel: `${saved.start_date} – ${saved.end_date}`,
+        adBudget: Number(saved.budget),
+        status: saved.status,
+        objectiveType: saved.objective || undefined,
+      } : item));
+      setIsEditModalOpen(false);
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to update campaign.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleAddResults = (results: {
-    reportingDate: string;
+  const handleAddResults = async (results: {
     adSpend: number;
     leads: number;
     customers: number;
     revenue: number;
     isIncremental: boolean;
   }) => {
-    setCampaigns((prev) =>
-      prev.map((c) => {
-        if (c.id !== campaign.id) return c;
-        const newSpend = results.isIncremental ? c.adSpend + results.adSpend : results.adSpend;
-        const newLeads = results.isIncremental ? c.leads + results.leads : results.leads;
-        const newCustomers = results.isIncremental
-          ? (c.acquiredCustomers || 0) + results.customers
-          : results.customers;
-        const newRevenue = results.isIncremental
-          ? (c.revenue || 0) + results.revenue
-          : results.revenue;
-        const newRoas = newSpend > 0 ? parseFloat((newRevenue / newSpend).toFixed(2)) : c.roas;
-
-        return {
-          ...c,
-          adSpend: newSpend,
-          leads: newLeads,
-          acquiredCustomers: newCustomers,
-          revenue: newRevenue,
-          roas: newRoas,
-        };
-      })
-    );
-
-    // Add activity record
-    const newActivity: CampaignActivityItem = {
-      id: `act-${Date.now()}`,
-      icon: 'import',
-      title: 'Results imported',
-      description: `${results.reportingDate}: ${results.adSpend.toLocaleString()} MAD spend, ${results.leads} leads recorded`,
-      timestamp: 'Just now',
-    };
-    setActivities((prev) => [newActivity, ...prev]);
-
-    // Update last chart point if relevant
-    setChartData((prev) => {
-      const copy = [...prev];
-      if (copy.length > 0) {
-        const last = copy[copy.length - 1];
-        copy[copy.length - 1] = {
-          ...last,
-          actualSpend: results.isIncremental ? last.actualSpend + results.adSpend : results.adSpend,
-        };
-      }
-      return copy;
-    });
-  };
-
-  const handleArchiveCampaign = () => {
-    setCampaigns((prev) =>
-      prev.map((c) => (c.id === campaign.id ? { ...c, status: 'Archived' } : c))
-    );
-    setShowMoreActions(false);
-  };
-
-  const handleDeleteCampaign = () => {
-    if (window.confirm('Are you sure you want to delete this campaign?')) {
-      setCampaigns((prev) => prev.filter((c) => c.id !== campaign.id));
-      navigate('/campaigns');
+    if (!hasWorkspace || !campaign) return;
+    setIsSaving(true);
+    setActionError(null);
+    const spend = results.isIncremental ? campaign.adSpend + results.adSpend : results.adSpend;
+    const leads = results.isIncremental ? campaign.leads + results.leads : results.leads;
+    const customers = results.isIncremental ? (campaign.acquiredCustomers || 0) + results.customers : results.customers;
+    const revenue = results.isIncremental ? (campaign.revenue || 0) + results.revenue : results.revenue;
+    try {
+      const saved = await campaignService.update(currentWorkspace.id, campaign.id, {
+        spend,
+        leads,
+        customers,
+        revenue,
+      });
+      setCampaigns((prev) => prev.map((item) => item.id === saved.id ? {
+        ...item,
+        adSpend: Number(saved.spend),
+        leads: saved.leads,
+        acquiredCustomers: saved.customers,
+        revenue: Number(saved.revenue),
+      } : item));
+      setIsAddResultsOpen(false);
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to save campaign results.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
+  const handleArchiveCampaign = async () => {
+    if (!hasWorkspace || !campaign) return;
+    setShowMoreActions(false);
+    try {
+      const saved = await campaignService.update(currentWorkspace.id, campaign.id, { status: 'Archived' });
+      setCampaigns((prev) => prev.map((item) => item.id === saved.id ? { ...item, status: saved.status } : item));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to archive campaign.');
+    }
+  };
+
+  const handleDeleteCampaign = async () => {
+    if (hasWorkspace && campaign && window.confirm('Are you sure you want to delete this campaign?')) {
+      try {
+        await campaignService.remove(currentWorkspace.id, campaign.id);
+        setCampaigns((prev) => prev.filter((item) => item.id !== campaign.id));
+        navigate('/campaigns');
+      } catch (error) {
+        setActionError(error instanceof Error ? error.message : 'Unable to delete campaign.');
+      }
+    }
+  };
+
+  if (isLoading || isLoadingWorkspaces) {
+    return <div role="status" className="p-8 text-center text-sm text-[#64748B]">Loading campaign…</div>;
+  }
+  if (!hasWorkspace) {
+    return <div role="alert" className="m-8 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Select an active workspace to view campaigns.</div>;
+  }
+  if (!campaign) {
+    return (
+      <div role={loadError ? 'alert' : 'status'} className="m-8 rounded-lg border border-[#E2E8F0] bg-white p-5 text-sm text-[#64748B]">
+        <p>{loadError || 'Campaign not found in the active workspace.'}</p>
+        {loadError && <button type="button" onClick={() => void reloadCampaigns()} className="mt-2 font-semibold text-[#6D28D9] underline">Retry</button>}
+        <Link to="/campaigns" className="ml-3 font-semibold text-[#6D28D9] underline">Back to campaigns</Link>
+      </div>
+    );
+  }
+
   // Calculations for KPI & Progress
-  const adBudget = campaign.adBudget || 7500;
-  const adSpend = campaign.adSpend || 5400;
-  const leads = campaign.leads || 180;
-  const acquiredCustomers = campaign.acquiredCustomers ?? 60;
-  const roas = campaign.roas ?? 2.48;
+  const adBudget = campaign.adBudget;
+  const adSpend = campaign.adSpend;
+  const leads = campaign.leads;
+  const acquiredCustomers = campaign.acquiredCustomers ?? 0;
+  const roas = adSpend > 0 ? Number(((campaign.revenue || 0) / adSpend).toFixed(2)) : 0;
+  const currency = currentWorkspace.currency || '';
 
   const remainingBudget = Math.max(0, adBudget - adSpend);
   const budgetUtilization = adBudget > 0 ? Math.round((adSpend / adBudget) * 100) : 0;
@@ -263,6 +285,13 @@ export const CampaignDetailsPage: React.FC = () => {
         <span className="text-[#1E1B4B] font-medium">{campaign.name}</span>
       </div>
 
+      {(loadError || actionError) && (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          {actionError || loadError}
+          {loadError && <button type="button" onClick={() => void reloadCampaigns()} className="ml-3 font-semibold underline">Retry</button>}
+        </div>
+      )}
+
       {/* Header with Title and Action Buttons */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold text-[#1E1B4B] tracking-tight">{campaign.name}</h1>
@@ -278,8 +307,9 @@ export const CampaignDetailsPage: React.FC = () => {
 
           <button
             type="button"
+            disabled={isSaving}
             onClick={() => setIsAddResultsOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             <span>Add Results</span>
@@ -346,7 +376,7 @@ export const CampaignDetailsPage: React.FC = () => {
             </svg>
           </div>
           <div>
-            <div className="font-semibold text-[#1E1B4B]">{campaign.platform || 'Meta Ads'}</div>
+            <div className="font-semibold text-[#1E1B4B]">{campaign.platform}</div>
             <div className="text-[10px] text-[#94A3B8]">Platform</div>
           </div>
         </div>
@@ -356,10 +386,10 @@ export const CampaignDetailsPage: React.FC = () => {
           <FolderGit2 className="w-4 h-4 text-[#6D28D9]" />
           <div>
             <Link
-              to={`/projects/${campaign.projectId || 'autumn-sales-growth'}`}
+              to={`/projects/${campaign.projectId}`}
               className="font-semibold text-[#1E1B4B] hover:text-[#6D28D9] hover:underline transition-colors"
             >
-              {campaign.projectName || 'Autumn Sales Growth'}
+              {campaign.projectName}
             </Link>
             <div className="text-[10px] text-[#94A3B8]">Project</div>
           </div>
@@ -370,7 +400,7 @@ export const CampaignDetailsPage: React.FC = () => {
           <Building2 className="w-4 h-4 text-[#64748B]" />
           <div>
             <div className="font-semibold text-[#1E1B4B]">
-              {campaign.workspaceName || currentWorkspace?.name || 'Atlas Retail SARL'}
+              {campaign.workspaceName || currentWorkspace.name}
             </div>
             <div className="text-[10px] text-[#94A3B8]">Workspace</div>
           </div>
@@ -381,7 +411,7 @@ export const CampaignDetailsPage: React.FC = () => {
           <Calendar className="w-4 h-4 text-[#64748B]" />
           <div>
             <div className="font-semibold text-[#1E1B4B]">
-              {campaign.periodLabel || `${campaign.startDate} – ${campaign.endDate}`}
+              {campaign.startDate} – {campaign.endDate}
             </div>
             <div className="text-[10px] text-[#94A3B8]">Period</div>
           </div>
@@ -427,7 +457,7 @@ export const CampaignDetailsPage: React.FC = () => {
               </div>
               <div className="mt-3">
                 <div className="text-xl font-bold text-[#1E1B4B]">
-                  {adBudget.toLocaleString()} MAD
+                  {adBudget.toLocaleString()} {currency}
                 </div>
               </div>
             </div>
@@ -445,7 +475,7 @@ export const CampaignDetailsPage: React.FC = () => {
               </div>
               <div className="mt-3">
                 <div className="text-xl font-bold text-[#1E1B4B]">
-                  {adSpend.toLocaleString()} MAD
+                  {adSpend.toLocaleString()} {currency}
                 </div>
                 <div className="flex items-center gap-1 text-[11px] font-medium text-[#0D9488] mt-1">
                   <ArrowDownRight className="w-3.5 h-3.5" />
@@ -546,7 +576,11 @@ export const CampaignDetailsPage: React.FC = () => {
 
                 {/* Recharts Chart */}
                 <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
+                  {chartData.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-center text-xs text-[#94A3B8]">
+                      Historical spend series is not available from the campaign API.
+                    </div>
+                  ) : <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={chartData}
                       margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
@@ -574,7 +608,7 @@ export const CampaignDetailsPage: React.FC = () => {
                         domain={[0, 8000]}
                         ticks={[0, 2000, 4000, 6000, 8000]}
                       />
-                      <Tooltip content={<CustomSpendTooltip />} />
+                      <Tooltip content={<CustomSpendTooltip currency={currency} />} />
                       {/* Planned Budget Dashed Line */}
                       <Line
                         type="monotone"
@@ -595,56 +629,7 @@ export const CampaignDetailsPage: React.FC = () => {
                         activeDot={{ r: 5, fill: '#6D28D9', stroke: '#FFFFFF', strokeWidth: 2 }}
                       />
                     </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Campaign Objectives */}
-              <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-2xs">
-                <div className="flex items-center justify-between mb-3.5">
-                  <h3 className="text-sm font-bold text-[#1E1B4B]">Campaign objectives</h3>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditObjectivesOpen(true)}
-                    className="text-xs font-semibold text-[#6D28D9] hover:underline flex items-center gap-1 transition-colors"
-                  >
-                    <span>Edit Objectives</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {objectives.map((obj) => (
-                    <div
-                      key={obj.id}
-                      className="flex items-center justify-between py-2 border-b border-[#F8F7FC] last:border-b-0"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {obj.status === 'On track' || obj.status === 'Completed' ? (
-                          <CheckCircle2 className="w-4 h-4 text-[#0D9488] shrink-0" />
-                        ) : (
-                          <CircleDot className="w-4 h-4 text-[#7C3AED] shrink-0" />
-                        )}
-                        <span className="text-xs text-[#1E1B4B] font-medium">{obj.text}</span>
-                      </div>
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium ${
-                          obj.status === 'On track' || obj.status === 'Completed'
-                            ? 'bg-[#ECFDF5] text-[#059669]'
-                            : 'bg-[#F5F3FF] text-[#7C3AED]'
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            obj.status === 'On track' || obj.status === 'Completed'
-                              ? 'bg-[#059669]'
-                              : 'bg-[#7C3AED]'
-                          }`}
-                        />
-                        {obj.status}
-                      </span>
-                    </div>
-                  ))}
+                  </ResponsiveContainer>}
                 </div>
               </div>
 
@@ -658,16 +643,15 @@ export const CampaignDetailsPage: React.FC = () => {
                     </div>
                     <div>
                       <h4 className="text-sm font-bold text-[#1E1B4B]">
-                        {campaign.projectName || 'Autumn Sales Growth'}
+                        {campaign.projectName}
                       </h4>
                       <p className="text-xs text-[#64748B] mt-0.5 max-w-lg leading-relaxed">
-                        A multi-channel initiative focused on increasing seasonal sales through audience
-                        targeting, promotional creative, and coordinated campaign execution.
+                        {projects.find((project) => project.id === campaign.projectId)?.description || 'No project description is available.'}
                       </p>
                     </div>
                   </div>
                   <Link
-                    to={`/projects/${campaign.projectId || 'autumn-sales-growth'}`}
+                    to={`/projects/${campaign.projectId}`}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 border border-[#6D28D9] text-[#6D28D9] hover:bg-[#F5F3FF] text-xs font-semibold rounded-lg transition-colors shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -710,19 +694,19 @@ export const CampaignDetailsPage: React.FC = () => {
                   <div>
                     <div className="text-[10px] text-[#64748B]">Allocated budget</div>
                     <div className="text-xs font-bold text-[#1E1B4B] mt-0.5">
-                      {adBudget.toLocaleString()} MAD
+                      {adBudget.toLocaleString()} {currency}
                     </div>
                   </div>
                   <div>
                     <div className="text-[10px] text-[#64748B]">Spent</div>
                     <div className="text-xs font-bold text-[#1E1B4B] mt-0.5">
-                      {adSpend.toLocaleString()} MAD
+                      {adSpend.toLocaleString()} {currency}
                     </div>
                   </div>
                   <div>
                     <div className="text-[10px] text-[#64748B]">Remaining</div>
                     <div className="text-xs font-bold text-[#0D9488] mt-0.5">
-                      {remainingBudget.toLocaleString()} MAD
+                      {remainingBudget.toLocaleString()} {currency}
                     </div>
                   </div>
                 </div>
@@ -741,21 +725,21 @@ export const CampaignDetailsPage: React.FC = () => {
                           <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z" />
                         </svg>
                       </span>
-                      <span>{campaign.platform || 'Meta Ads'}</span>
+                      <span>{campaign.platform}</span>
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between py-1 border-b border-[#F8F7FC]">
                     <span className="text-[#64748B]">Campaign type</span>
                     <span className="font-medium text-[#1E1B4B]">
-                      {campaign.campaignType || 'Multi-channel'}
+                      {campaign.channel}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between py-1 border-b border-[#F8F7FC]">
                     <span className="text-[#64748B]">Objective type</span>
                     <span className="font-medium text-[#1E1B4B]">
-                      {campaign.objectiveType || 'Sales / Conversions'}
+                      {campaign.objectiveType || 'Not specified'}
                     </span>
                   </div>
 
@@ -763,7 +747,7 @@ export const CampaignDetailsPage: React.FC = () => {
                     <span className="text-[#64748B]">Data source</span>
                     <div className="flex items-center gap-1.5 font-medium text-[#1E1B4B]">
                       <Database className="w-3.5 h-3.5 text-[#6D28D9]" />
-                      <span>{campaign.dataSource || 'Manual entry / CSV import'}</span>
+                      <span>Campaign record</span>
                       <Info className="w-3.5 h-3.5 text-[#94A3B8]" />
                     </div>
                   </div>
@@ -774,37 +758,9 @@ export const CampaignDetailsPage: React.FC = () => {
               <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-2xs">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-bold text-[#1E1B4B]">Recent activity</h3>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('Activity')}
-                    className="text-xs font-semibold text-[#6D28D9] hover:underline flex items-center gap-1 transition-colors"
-                  >
-                    <span>View all activity</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
                 </div>
 
-                <div className="relative pl-6 space-y-4">
-                  {/* Vertical connecting line */}
-                  <div className="absolute left-2.5 top-2 bottom-2 w-0.5 bg-[#E2E8F0]" />
-
-                  {activities.map((act) => (
-                    <div key={act.id} className="relative">
-                      {/* Timeline Dot Icon */}
-                      <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full bg-white border-2 border-[#6D28D9] flex items-center justify-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#6D28D9]" />
-                      </div>
-
-                      <div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-[#1E1B4B]">{act.title}</span>
-                          <span className="text-[10px] text-[#94A3B8]">{act.timestamp}</span>
-                        </div>
-                        <p className="text-[11px] text-[#64748B] mt-0.5">{act.description}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <p className="py-4 text-xs text-[#94A3B8]">Activity history is not available from the campaign API.</p>
               </div>
             </div>
           </div>
@@ -930,7 +886,10 @@ export const CampaignDetailsPage: React.FC = () => {
         onClose={() => setIsEditModalOpen(false)}
         onSave={handleUpdateCampaign}
         initialCampaign={campaign}
-        workspaceName={campaign.workspaceName || currentWorkspace?.name || 'Atlas Retail SARL'}
+        workspaceName={campaign.workspaceName || currentWorkspace.name}
+        projects={projects}
+        isSaving={isSaving}
+        saveError={actionError}
       />
 
       {/* Add Results Modal */}
@@ -939,15 +898,10 @@ export const CampaignDetailsPage: React.FC = () => {
         onClose={() => setIsAddResultsOpen(false)}
         onSave={handleAddResults}
         campaignName={campaign.name}
+        isSaving={isSaving}
+        saveError={actionError}
       />
 
-      {/* Edit Objectives Modal */}
-      <EditObjectivesModal
-        isOpen={isEditObjectivesOpen}
-        onClose={() => setIsEditObjectivesOpen(false)}
-        objectives={objectives}
-        onSave={(updated) => setObjectives(updated)}
-      />
     </div>
   );
 };

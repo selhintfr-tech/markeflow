@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   FolderKanban,
@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Search,
   ChevronDown,
-  SlidersHorizontal,
   Building2,
   Plus,
   MoreHorizontal,
@@ -18,44 +17,71 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
-import { initialMarketingProjectsList } from '../../data/mock';
 import type { MarketingProjectItem, MarketingProjectStatus } from '../../types';
+import { projectService, type ProjectRecord } from './projectService';
+import { ApiError } from '../api/apiClient';
+import { useAuth } from '../../context/AuthContext';
+
+function toProjectItem(record: ProjectRecord, workspaceName: string, currentUserId?: string): MarketingProjectItem {
+  const ownerName = currentUserId && String(record.owner_id) === currentUserId ? 'You' : `Member ${record.owner_id}`;
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description || '',
+    workspaceId: record.workspace_id,
+    workspaceName,
+    workspaceIconType: 'building',
+    owner: {
+      name: ownerName,
+      initials: ownerName.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
+      avatarBg: '#EDE9FE',
+      avatarColor: '#6D28D9',
+    },
+    progress: record.progress,
+    startDate: record.start_date,
+    endDate: record.end_date,
+    status: record.status as MarketingProjectStatus,
+    createdAt: record.created_at,
+  };
+}
 
 export const ProjectsListPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentWorkspace, workspaces } = useWorkspace();
+  const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
+  const { user } = useAuth();
+  const [projects, setProjects] = useState<MarketingProjectItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const STORAGE_KEY = 'marketflow_projects_v2';
-
-  // Load projects from localStorage or fallback to initial list
-  const [projects, setProjects] = useState<MarketingProjectItem[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
+  const reloadProjects = useCallback(async () => {
+    if (!hasWorkspace) {
+      setProjects([]);
+      setIsLoading(false);
+      return;
     }
-    return initialMarketingProjectsList;
-  });
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const records = await projectService.list(currentWorkspace.id);
+      setProjects(records.map((record) => toProjectItem(record, currentWorkspace.name, user?.id)));
+    } catch (error) {
+      setProjects([]);
+      setLoadError(error instanceof Error ? error.message : 'Unable to load projects.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [hasWorkspace, currentWorkspace.id, currentWorkspace.name, user?.id]);
 
-  // Save to localStorage whenever projects change
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    } catch {
-      // ignore
-    }
-  }, [projects]);
+    if (!isLoadingWorkspaces) void reloadProjects();
+  }, [isLoadingWorkspaces, reloadProjects]);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Active' | 'Completed' | 'Archived'>('All');
-  const [workspaceFilter, setWorkspaceFilter] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'Recent' | 'Name' | 'Progress' | 'StartDate'>('Recent');
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
 
   // Pagination
@@ -70,10 +96,10 @@ export const ProjectsListPage: React.FC = () => {
   // Form states for Create/Edit
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
-  const [formWorkspaceName, setFormWorkspaceName] = useState('Atlas Retail SARL');
-  const [formOwnerName, setFormOwnerName] = useState('Sara El Amrani');
-  const [formStartDate, setFormStartDate] = useState('01 Nov 2026');
-  const [formEndDate, setFormEndDate] = useState('30 Nov 2026');
+  const [formWorkspaceName, setFormWorkspaceName] = useState('');
+  const [formOwnerName, setFormOwnerName] = useState('');
+  const [formStartDate, setFormStartDate] = useState('2026-11-01');
+  const [formEndDate, setFormEndDate] = useState('2026-11-30');
   const [formStatus, setFormStatus] = useState<MarketingProjectStatus>('Active');
   const [formProgress, setFormProgress] = useState(0);
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -103,11 +129,6 @@ export const ProjectsListPage: React.FC = () => {
           return false;
         }
 
-        // Workspace filter
-        if (workspaceFilter !== 'All' && project.workspaceName !== workspaceFilter) {
-          return false;
-        }
-
         return true;
       })
       .sort((a, b) => {
@@ -117,12 +138,12 @@ export const ProjectsListPage: React.FC = () => {
         // Default Recent
         return (b.createdAt || '').localeCompare(a.createdAt || '');
       });
-  }, [projects, searchQuery, statusFilter, workspaceFilter, sortBy]);
+  }, [projects, searchQuery, statusFilter, sortBy]);
 
   // Reset page when filter changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, workspaceFilter, sortBy]);
+  }, [searchQuery, statusFilter, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filteredProjects.length / pageSize));
   const paginatedProjects = useMemo(() => {
@@ -135,10 +156,10 @@ export const ProjectsListPage: React.FC = () => {
     setEditingProject(null);
     setFormName('');
     setFormDesc('');
-    setFormWorkspaceName(currentWorkspace?.name || 'Atlas Retail SARL');
-    setFormOwnerName('Sara El Amrani');
-    setFormStartDate('01 Nov 2026');
-    setFormEndDate('30 Nov 2026');
+    setFormWorkspaceName(currentWorkspace.name);
+    setFormOwnerName(user?.name || '');
+    setFormStartDate('2026-11-01');
+    setFormEndDate('2026-11-30');
     setFormStatus('Active');
     setFormProgress(0);
     setFormErrors({});
@@ -168,86 +189,63 @@ export const ProjectsListPage: React.FC = () => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSaveProject = (e: React.FormEvent) => {
+  const handleSaveProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateForm()) return;
-
-    const ownerInitials = formOwnerName
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase();
-
-    if (editingProject) {
-      // Edit existing
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === editingProject.id
-            ? {
-                ...p,
-                name: formName.trim(),
-                description: formDesc.trim(),
-                workspaceName: formWorkspaceName,
-                owner: {
-                  ...p.owner,
-                  name: formOwnerName,
-                  initials: ownerInitials,
-                },
-                startDate: formStartDate,
-                endDate: formEndDate,
-                status: formStatus,
-                progress: formProgress,
-              }
-            : p
-        )
-      );
-    } else {
-      // Create new
-      const newId = formName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + `-${Date.now().toString().slice(-4)}`;
-      const newProj: MarketingProjectItem = {
-        id: newId,
+    if (!hasWorkspace) return;
+    setIsSaving(true);
+    setActionError(null);
+    try {
+      const payload = {
         name: formName.trim(),
-        description: formDesc.trim() || 'Marketing initiative.',
-        workspaceId: currentWorkspace?.id || 'ws-atlas-retail',
-        workspaceName: formWorkspaceName,
-        workspaceIconType: 'building',
-        owner: {
-          name: formOwnerName,
-          initials: ownerInitials,
-          avatarBg: '#EDE9FE',
-          avatarColor: '#6D28D9',
-        },
-        progress: formProgress,
-        startDate: formStartDate,
-        endDate: formEndDate,
+        description: formDesc.trim() || null,
+        start_date: formStartDate,
+        end_date: formEndDate,
         status: formStatus,
-        createdAt: new Date().toISOString().split('T')[0],
+        progress: formProgress,
       };
-      setProjects((prev) => [newProj, ...prev]);
+      const saved = editingProject
+        ? await projectService.update(currentWorkspace.id, editingProject.id, payload)
+        : await projectService.create(currentWorkspace.id, payload);
+      const mapped = toProjectItem(saved, currentWorkspace.name, user?.id);
+      setProjects((prev) => editingProject
+        ? prev.map((project) => project.id === mapped.id ? mapped : project)
+        : [mapped, ...prev]);
+      setIsCreateModalOpen(false);
+    } catch (error) {
+      setActionError(error instanceof ApiError && error.errors
+        ? Object.values(error.errors).flat().join(' ')
+        : error instanceof Error ? error.message : 'Unable to save project.');
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsCreateModalOpen(false);
   };
 
   // Actions
-  const handleToggleArchive = (id: string) => {
-    setProjects((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          return {
-            ...p,
-            status: p.status === 'Archived' ? 'Active' : 'Archived',
-          };
-        }
-        return p;
-      })
-    );
+  const handleToggleArchive = async (id: string) => {
+    const project = projects.find((item) => item.id === id);
+    if (!project || !hasWorkspace) return;
     setActiveMenuId(null);
+    try {
+      const saved = await projectService.update(currentWorkspace.id, id, {
+        status: project.status === 'Archived' ? 'Active' : 'Archived',
+      });
+      const mapped = toProjectItem(saved, currentWorkspace.name, user?.id);
+      setProjects((prev) => prev.map((item) => item.id === id ? mapped : item));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to update project status.');
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  const handleDeleteProject = async (id: string) => {
+    if (!hasWorkspace || !window.confirm('Delete this project? This action cannot be undone.')) return;
     setActiveMenuId(null);
+    try {
+      await projectService.remove(currentWorkspace.id, id);
+      setProjects((prev) => prev.filter((project) => project.id !== id));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to delete project.');
+    }
   };
 
   const renderStatusBadge = (status: string) => {
@@ -271,6 +269,13 @@ export const ProjectsListPage: React.FC = () => {
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-[#F1F5F9] text-[#64748B]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#64748B]" />
             Archived
+          </span>
+        );
+      case 'Draft':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+            Draft
           </span>
         );
       case 'Planned':
@@ -306,6 +311,7 @@ export const ProjectsListPage: React.FC = () => {
           <button
             type="button"
             onClick={openCreateModal}
+            disabled={!hasWorkspace || isLoadingWorkspaces}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-[#6D28D9] text-white text-xs font-semibold rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs self-start sm:self-auto"
           >
             <Plus className="w-4 h-4" />
@@ -313,6 +319,17 @@ export const ProjectsListPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {(loadError || actionError) && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+          <span>{actionError || loadError}</span>
+          {loadError && <button type="button" onClick={() => void reloadProjects()} className="font-semibold underline">Retry</button>}
+          {actionError && <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss error">×</button>}
+        </div>
+      )}
+      {!isLoadingWorkspaces && !hasWorkspace && (
+        <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">Select or create an active workspace before managing projects.</div>
+      )}
 
       {/* 2. Four KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -475,52 +492,6 @@ export const ProjectsListPage: React.FC = () => {
             )}
           </div>
 
-          {/* Filter Button */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsFilterDropdownOpen(!isFilterDropdownOpen)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border bg-white text-xs font-medium shadow-2xs transition-colors ${
-                workspaceFilter !== 'All'
-                  ? 'border-[#6D28D9] text-[#6D28D9] bg-[#F5F3FF]'
-                  : 'border-[#E2E8F0] text-[#1E1B4B] hover:bg-[#F8FAFC]'
-              }`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>Filter</span>
-            </button>
-
-            {isFilterDropdownOpen && (
-              <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-[#E2E8F0] rounded-lg shadow-lg p-3 z-30 space-y-2">
-                <div className="text-xs font-bold text-[#1E1B4B]">Filter by Workspace</div>
-                <select
-                  value={workspaceFilter}
-                  onChange={(e) => {
-                    setWorkspaceFilter(e.target.value);
-                    setIsFilterDropdownOpen(false);
-                  }}
-                  className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-[#E2E8F0] rounded-md text-[#1E1B4B]"
-                >
-                  <option value="All">All Workspaces</option>
-                  <option value="Atlas Retail SARL">Atlas Retail SARL</option>
-                  <option value="Nova Studio SARL">Nova Studio SARL</option>
-                </select>
-
-                {workspaceFilter !== 'All' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setWorkspaceFilter('All');
-                      setIsFilterDropdownOpen(false);
-                    }}
-                    className="text-[11px] text-[#6D28D9] hover:underline block pt-1"
-                  >
-                    Reset filters
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -541,7 +512,9 @@ export const ProjectsListPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F1F5F9]">
-              {paginatedProjects.length === 0 ? (
+              {isLoading || isLoadingWorkspaces ? (
+                <tr><td colSpan={8} className="py-12 text-center text-xs text-[#64748B]">Loading projects…</td></tr>
+              ) : paginatedProjects.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-xs text-[#64748B]">
                     No marketing projects found matching your criteria.
@@ -753,6 +726,7 @@ export const ProjectsListPage: React.FC = () => {
             </div>
 
             <form onSubmit={handleSaveProject} className="p-5 space-y-3.5">
+              {actionError && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p>}
               <div>
                 <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                   Project Name <span className="text-red-500">*</span>
@@ -791,14 +765,10 @@ export const ProjectsListPage: React.FC = () => {
                   </label>
                   <select
                     value={formWorkspaceName}
-                    onChange={(e) => setFormWorkspaceName(e.target.value)}
+                    disabled
                     className="w-full px-2.5 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   >
-                    {workspaces.map((ws) => (
-                      <option key={ws.id} value={ws.name}>
-                        {ws.name}
-                      </option>
-                    ))}
+                    <option value={formWorkspaceName}>{formWorkspaceName || 'Select an active workspace'}</option>
                   </select>
                 </div>
 
@@ -806,16 +776,11 @@ export const ProjectsListPage: React.FC = () => {
                   <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
                     Owner
                   </label>
-                  <select
+                  <input
                     value={formOwnerName}
-                    onChange={(e) => setFormOwnerName(e.target.value)}
-                    className="w-full px-2.5 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
-                  >
-                    <option value="Sara El Amrani">Sara El Amrani</option>
-                    <option value="Yassine Bouchra">Yassine Bouchra</option>
-                    <option value="Imane Benkirane">Imane Benkirane</option>
-                    <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
-                  </select>
+                    disabled
+                    className="w-full px-2.5 py-2 text-xs bg-slate-50 border border-[#E2E8F0] rounded-lg text-[#64748B]"
+                  />
                 </div>
               </div>
 
@@ -825,10 +790,9 @@ export const ProjectsListPage: React.FC = () => {
                     Start Date <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="date"
                     value={formStartDate}
                     onChange={(e) => setFormStartDate(e.target.value)}
-                    placeholder="01 Nov 2026"
                     className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   />
                 </div>
@@ -838,10 +802,9 @@ export const ProjectsListPage: React.FC = () => {
                     End Date <span className="text-red-500">*</span>
                   </label>
                   <input
-                    type="text"
+                    type="date"
                     value={formEndDate}
                     onChange={(e) => setFormEndDate(e.target.value)}
-                    placeholder="30 Nov 2026"
                     className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   />
                 </div>
@@ -889,9 +852,10 @@ export const ProjectsListPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs"
+                  disabled={isSaving || !hasWorkspace}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs disabled:opacity-50"
                 >
-                  {editingProject ? 'Save Changes' : 'Create Project'}
+                  {isSaving ? 'Saving…' : editingProject ? 'Save Changes' : 'Create Project'}
                 </button>
               </div>
             </form>

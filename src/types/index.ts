@@ -49,10 +49,11 @@ export interface WorkspaceMemberAvatar {
 export interface WorkspaceDetail extends Workspace {
   description: string;
   location: string;
-  membersCount: number;
+  currency?: string;
+  membersCount?: number;
   membersAvatars: WorkspaceMemberAvatar[];
   extraMembersCount?: number;
-  projectsCount: number;
+  projectsCount?: number;
   status: 'Active' | 'Inactive' | string;
   iconType?: 'building' | 'users' | 'store';
 }
@@ -627,8 +628,6 @@ export interface MetricComparisonRow {
   isCost?: boolean;
   observation: string;
 }
-
-
 
 
 

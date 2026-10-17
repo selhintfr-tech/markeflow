@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { X, TrendingUp } from 'lucide-react';
+import { useWorkspace } from '../../../context/WorkspaceContext';
 
 interface AddResultsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (results: {
-    reportingDate: string;
     adSpend: number;
     leads: number;
     customers: number;
     revenue: number;
     isIncremental: boolean;
-  }) => void;
+  }) => Promise<void>;
   campaignName: string;
+  isSaving: boolean;
+  saveError: string | null;
 }
 
 export const AddResultsModal: React.FC<AddResultsModalProps> = ({
@@ -20,8 +22,10 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
   onClose,
   onSave,
   campaignName,
+  isSaving,
+  saveError,
 }) => {
-  const [reportingDate, setReportingDate] = useState('15 Oct 2026');
+  const { currentWorkspace } = useWorkspace();
   const [adSpend, setAdSpend] = useState('');
   const [leads, setLeads] = useState('');
   const [customers, setCustomers] = useState('');
@@ -44,8 +48,7 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
 
   const validate = () => {
     const errs: { [key: string]: string } = {};
-    if (!reportingDate.trim()) errs.reportingDate = 'Reporting date is required';
-    if (!adSpend || isNaN(Number(adSpend)) || Number(adSpend) < 0) {
+    if (!adSpend.trim() || isNaN(Number(adSpend)) || Number(adSpend) < 0) {
       errs.adSpend = 'Enter a valid ad spend amount';
     }
     if (leads && (isNaN(Number(leads)) || Number(leads) < 0)) {
@@ -61,12 +64,11 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
-    onSave({
-      reportingDate,
+    await onSave({
       adSpend: parseFloat(adSpend) || 0,
       leads: parseInt(leads, 10) || 0,
       customers: parseInt(customers, 10) || 0,
@@ -74,7 +76,6 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
       isIncremental,
     });
 
-    onClose();
   };
 
   return (
@@ -99,7 +100,8 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-3.5">
+        <form onSubmit={(event) => { void handleSubmit(event); }} className="p-5 space-y-3.5">
+          {saveError && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>}
           {/* Mode Switcher */}
           <div className="bg-[#F8F7FC] p-2.5 rounded-lg flex items-center justify-between">
             <span className="text-xs font-medium text-[#1E1B4B]">Submission Mode</span>
@@ -125,29 +127,10 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label htmlFor="results-reporting-date-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-              Reporting Date <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="results-reporting-date-input"
-              type="text"
-              value={reportingDate}
-              onChange={(e) => setReportingDate(e.target.value)}
-              placeholder="e.g. 15 Oct 2026"
-              className={`w-full px-3 py-2 text-xs bg-white border rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
-                errors.reportingDate ? 'border-red-500' : 'border-[#E2E8F0]'
-              }`}
-            />
-            {errors.reportingDate && (
-              <p className="text-[11px] text-red-500 mt-1">{errors.reportingDate}</p>
-            )}
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="results-ad-spend-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                Ad Spend (MAD) <span className="text-red-500">*</span>
+                Ad Spend{currentWorkspace.currency ? ` (${currentWorkspace.currency})` : ''} <span className="text-red-500">*</span>
               </label>
               <input
                 id="results-ad-spend-input"
@@ -156,6 +139,7 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
                 onChange={(e) => setAdSpend(e.target.value)}
                 placeholder="e.g. 1200"
                 min="0"
+                step="0.01"
                 className={`w-full px-3 py-2 text-xs bg-white border rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
                   errors.adSpend ? 'border-red-500' : 'border-[#E2E8F0]'
                 }`}
@@ -199,7 +183,7 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                Revenue (MAD)
+                Revenue{currentWorkspace.currency ? ` (${currentWorkspace.currency})` : ''}
               </label>
               <input
                 type="number"
@@ -222,9 +206,10 @@ export const AddResultsModal: React.FC<AddResultsModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-4 py-1.5 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs"
+              disabled={isSaving}
+              className="px-4 py-1.5 text-xs font-semibold text-white bg-[#6D28D9] rounded-lg hover:bg-[#5B21B6] transition-colors shadow-2xs disabled:opacity-50"
             >
-              Record Results
+              {isSaving ? 'Saving…' : 'Record Results'}
             </button>
           </div>
         </form>
