@@ -40,3 +40,6 @@ require base_path('routes/research.php');
 Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])->group(function (): void {
     require base_path('routes/crm.php');
 });
+require base_path('routes/analytics.php');
+require base_path('routes/reports.php');
+require base_path('routes/comparisons.php');
