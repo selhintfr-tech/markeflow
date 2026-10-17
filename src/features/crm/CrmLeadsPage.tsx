@@ -1,1974 +1,735 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useWorkspace } from '../../context/WorkspaceContext';
 import {
-  Upload,
-  Plus,
-  Users,
-  UserCheck,
-  TrendingUp,
-  ChevronRight,
-  ChevronDown,
-  Info,
-  Search,
-  MoreHorizontal,
-  Mail,
-  Phone,
-  MapPin,
-  Building,
-  Megaphone,
-  Folder,
-  Calendar,
-  Pencil,
-  ExternalLink,
-  X,
-  Check,
-  AlertCircle,
-  Trash2,
-  MessageSquare,
-  FileSpreadsheet,
-} from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import {
-  crmKpiStats,
-  initialFunnelStages,
-  initialCrmLeads,
-} from '../../data/mock';
-import type {
-  CRMLead,
-  CRMLeadStatus,
-  CRMLeadActivity,
-  CRMFunnelStage,
-} from '../../types';
+  crmService,
+  type CrmActivity,
+  type CrmContact,
+  type CrmCustomer,
+  type CrmLead,
+  type CrmNote,
+  type CrmPipeline,
+  type CrmStage,
+  type FunnelStage,
+} from './crmService';
+
+type Section = 'leads' | 'contacts' | 'customers' | 'pipeline';
+type EntityForm =
+  | { type: 'lead'; record?: CrmLead }
+  | { type: 'contact'; record?: CrmContact }
+  | { type: 'customer'; record?: CrmCustomer }
+  | { type: 'pipeline'; record?: CrmPipeline }
+  | { type: 'stage'; pipelineId: string; record?: CrmStage };
+type ProfileView =
+  | { kind: 'contact'; loading: boolean; record?: CrmContact; error?: string }
+  | { kind: 'customer'; loading: boolean; record?: CrmCustomer; error?: string };
+
+const inputClass = 'w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-100';
+const buttonClass = 'rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50';
+const primaryClass = 'rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50';
+const leadStatuses = ['New', 'Contacted', 'Qualified', 'Converted', 'Lost'];
+const activityTypes = ['call', 'email', 'meeting', 'note'];
+
+function dateTimeLocal(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
 
 export const CrmLeadsPage: React.FC = () => {
-  const navigate = useNavigate();
+  const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
+  const workspaceId = currentWorkspace.id;
+  const [section, setSection] = useState<Section>('leads');
+  const [leads, setLeads] = useState<CrmLead[]>([]);
+  const [contacts, setContacts] = useState<CrmContact[]>([]);
+  const [customers, setCustomers] = useState<CrmCustomer[]>([]);
+  const [pipelines, setPipelines] = useState<CrmPipeline[]>([]);
+  const [funnel, setFunnel] = useState<FunnelStage[]>([]);
+  const [notes, setNotes] = useState<CrmNote[]>([]);
+  const [activities, setActivities] = useState<CrmActivity[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState('');
+  const [pipelineId, setPipelineId] = useState('');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const [sortBy, setSortBy] = useState('recent');
+  const [form, setForm] = useState<EntityForm | null>(null);
+  const [profile, setProfile] = useState<ProfileView | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [activityForm, setActivityForm] = useState({ type: 'call', title: '', description: '', activity_date: dateTimeLocal(new Date().toISOString()) });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [detailError, setDetailError] = useState('');
+  const requestId = useRef(0);
+  const profileRequestId = useRef(0);
+  const loadedWorkspaceId = useRef(workspaceId);
 
-  // State
-  const [leads, setLeads] = useState<CRMLead[]>(initialCrmLeads);
-  const [selectedLeadId, setSelectedLeadId] = useState<string>('lead-1');
-  const [isDetailPanelOpen, setIsDetailPanelOpen] = useState(true);
+  const refresh = useCallback(async () => {
+    const currentRequest = ++requestId.current;
+    if (loadedWorkspaceId.current !== workspaceId) {
+      loadedWorkspaceId.current = workspaceId;
+      setLeads([]);
+      setContacts([]);
+      setCustomers([]);
+      setPipelines([]);
+      setFunnel([]);
+      setNotes([]);
+      setActivities([]);
+      setSelectedLeadId('');
+      setPipelineId('');
+      setProfile(null);
+    }
+    if (!workspaceId) return;
+    setLoading(true);
+    setError('');
+    try {
+      const [leadResult, contactResult, customerResult, pipelineResult, funnelResult] = await Promise.all([
+        crmService.leads(workspaceId, { search: search || undefined, status: status || undefined, sort_by: sortBy }),
+        crmService.contacts(workspaceId, { search: section === 'contacts' ? search || undefined : undefined }),
+        crmService.customers(workspaceId, { search: section === 'customers' ? search || undefined : undefined }),
+        crmService.pipelines(workspaceId),
+        crmService.funnel(workspaceId),
+      ]);
+      if (currentRequest !== requestId.current) return;
+      setLeads(leadResult.data);
+      setContacts(contactResult.data);
+      setCustomers(customerResult.data);
+      setPipelines(pipelineResult);
+      setFunnel(funnelResult);
+      setSelectedLeadId((selected) => leadResult.data.some((lead) => lead.id === selected) ? selected : leadResult.data[0]?.id || '');
+      setPipelineId((selected) => pipelineResult.some((pipeline) => pipeline.id === selected)
+        ? selected
+        : pipelineResult.find((pipeline) => pipeline.is_default)?.id || pipelineResult[0]?.id || '');
+    } catch (cause) {
+      if (currentRequest === requestId.current) setError(cause instanceof Error ? cause.message : 'Unable to load CRM records.');
+    } finally {
+      if (currentRequest === requestId.current) setLoading(false);
+    }
+  }, [workspaceId, search, status, sortBy, section]);
 
-  // Filters & Search
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [campaignFilter, setCampaignFilter] = useState('All');
-  const [assigneeFilter, setAssigneeFilter] = useState('All');
-  const [sortOption, setSortOption] = useState<'recent' | 'oldest' | 'name' | 'company'>('recent');
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
-  // Modals & Feedback
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [isAddActivityModalOpen, setIsAddActivityModalOpen] = useState(false);
-  const [menuOpenLeadId, setMenuOpenLeadId] = useState<string | null>(null);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  useEffect(() => {
+    profileRequestId.current += 1;
+    setProfile(null);
+  }, [workspaceId]);
 
-  // CSV Import State
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvPreviewRows, setCsvPreviewRows] = useState<any[]>([]);
-  const [csvErrors, setCsvErrors] = useState<string[]>([]);
+  const selectedLead = useMemo(
+    () => leads.find((lead) => lead.id === selectedLeadId) || null,
+    [leads, selectedLeadId],
+  );
+  const selectedPipeline = pipelines.find((pipeline) => pipeline.id === pipelineId) || null;
 
-  // Form State for Add / Edit Lead
-  const [leadFormData, setLeadFormData] = useState({
-    name: '',
-    company: '',
-    email: '',
-    phone: '',
-    sourceCampaign: 'Autumn Launch 2026',
-    relatedProject: 'Autumn Sales Growth',
-    leadStatus: 'New' as CRMLeadStatus,
-    assignedToName: 'Sara El Amrani',
-    assignedToInitials: 'SE',
-    preferredContact: 'Email',
-    location: 'Casablanca, Morocco',
-    nextFollowUp: '18 Oct 2026, 10:00 AM',
-    internalNotes: '',
-  });
-  const [formError, setFormError] = useState('');
+  const loadLeadDetails = useCallback(async (leadId: string) => {
+    if (!workspaceId || !leadId) {
+      setNotes([]);
+      setActivities([]);
+      return;
+    }
+    setDetailError('');
+    try {
+      const [nextNotes, nextActivities] = await Promise.all([
+        crmService.notes(workspaceId, { lead_id: leadId }),
+        crmService.activities(workspaceId, { lead_id: leadId }),
+      ]);
+      setNotes(nextNotes);
+      setActivities(nextActivities);
+    } catch (cause) {
+      setDetailError(cause instanceof Error ? cause.message : 'Unable to load lead history.');
+    }
+  }, [workspaceId]);
 
-  // Activity Form State
-  const [activityForm, setActivityForm] = useState({
-    title: '',
-    date: '15 Oct 2026, 03:00 PM',
-    description: '',
-    type: 'call' as 'call' | 'email' | 'meeting' | 'note',
-  });
+  useEffect(() => {
+    void loadLeadDetails(selectedLeadId);
+  }, [loadLeadDetails, selectedLeadId]);
 
-  // Escape key handler for all active modals
-  React.useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (deleteConfirmId) setDeleteConfirmId(null);
-        else if (isAddModalOpen) setIsAddModalOpen(false);
-        else if (isEditModalOpen) setIsEditModalOpen(false);
-        else if (isAddActivityModalOpen) setIsAddActivityModalOpen(false);
-        else if (isImportModalOpen) setIsImportModalOpen(false);
-        else if (menuOpenLeadId) setMenuOpenLeadId(null);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [deleteConfirmId, isAddModalOpen, isEditModalOpen, isAddActivityModalOpen, isImportModalOpen, menuOpenLeadId]);
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const save = async (operation: () => Promise<unknown>) => {
+    setSaving(true);
+    setError('');
+    try {
+      await operation();
+      setForm(null);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The CRM record could not be saved.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // Find currently selected lead
-  const selectedLead = useMemo(() => {
-    return leads.find((l) => l.id === selectedLeadId) || leads[0] || null;
-  }, [leads, selectedLeadId]);
+  const openProfile = async (kind: ProfileView['kind'], id: string) => {
+    if (!workspaceId) return;
+    const currentRequest = ++profileRequestId.current;
+    setProfile(kind === 'contact'
+      ? { kind, loading: true }
+      : { kind, loading: true });
+    try {
+      if (kind === 'contact') {
+        const record = await crmService.contact(workspaceId, id);
+        if (currentRequest !== profileRequestId.current) return;
+        setProfile({ kind, loading: false, record });
+      } else {
+        const record = await crmService.customer(workspaceId, id);
+        if (currentRequest !== profileRequestId.current) return;
+        setProfile({ kind, loading: false, record });
+      }
+    } catch (cause) {
+      if (currentRequest !== profileRequestId.current) return;
+      setProfile(kind === 'contact'
+        ? { kind, loading: false, error: cause instanceof Error ? cause.message : 'Unable to load contact.' }
+        : { kind, loading: false, error: cause instanceof Error ? cause.message : 'Unable to load customer.' });
+    }
+  };
 
-  // Derived KPI & Funnel Stats
-  const dynamicFunnelStages = useMemo<CRMFunnelStage[]>(() => {
-    const initialStatusCounts: Record<CRMLeadStatus, number> = {
-      New: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'New').length,
-      Contacted: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Contacted').length,
-      Qualified: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Qualified').length,
-      Converted: initialCrmLeads.filter((l: CRMLead) => l.leadStatus === 'Converted').length,
-    };
+  const submitEntity = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!workspaceId || !form) return;
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const numeric = (key: string) => values[key] ? Number(values[key]) : null;
+    const text = (key: string) => String(values[key] || '').trim();
+    const optional = (key: string) => text(key) || null;
 
-    const currentStatusCounts: Record<CRMLeadStatus, number> = {
-      New: leads.filter((l: CRMLead) => l.leadStatus === 'New').length,
-      Contacted: leads.filter((l: CRMLead) => l.leadStatus === 'Contacted').length,
-      Qualified: leads.filter((l: CRMLead) => l.leadStatus === 'Qualified').length,
-      Converted: leads.filter((l: CRMLead) => l.leadStatus === 'Converted').length,
-    };
-
-    return initialFunnelStages.map((stage) => {
-      const delta = (currentStatusCounts[stage.status] || 0) - (initialStatusCounts[stage.status] || 0);
-      return {
-        ...stage,
-        count: Math.max(0, stage.count + delta),
+    if (form.type === 'lead') {
+      const payload = {
+        name: text('name'),
+        company: optional('company'),
+        email: optional('email'),
+        phone: optional('phone'),
+        source: optional('source'),
+        status: text('status'),
+        pipeline_id: optional('pipeline_id'),
+        stage_id: optional('stage_id'),
+        source_campaign_id: optional('source_campaign_id'),
+        related_project_id: optional('related_project_id'),
+        estimated_value: numeric('estimated_value'),
+        currency: text('currency') || 'USD',
+        owner_id: numeric('owner_id'),
+        preferred_contact: optional('preferred_contact'),
+        location: optional('location'),
+        next_follow_up_at: optional('next_follow_up_at'),
+        internal_notes: optional('internal_notes'),
       };
+      void save(() => form.record
+        ? crmService.updateLead(workspaceId, form.record.id, payload)
+        : crmService.createLead(workspaceId, payload));
+    } else if (form.type === 'contact') {
+      const payload = {
+        first_name: text('first_name'),
+        last_name: optional('last_name'),
+        company_name: optional('company_name'),
+        email: optional('email'),
+        phone: optional('phone'),
+        job_title: optional('job_title'),
+        preferred_contact: optional('preferred_contact'),
+        location: optional('location'),
+        lifecycle_stage: text('lifecycle_stage') || 'lead',
+        status: text('status') || 'Active',
+        owner_id: numeric('owner_id'),
+        notes: optional('notes'),
+      };
+      void save(() => form.record
+        ? crmService.updateContact(workspaceId, form.record.id, payload)
+        : crmService.createContact(workspaceId, payload));
+    } else if (form.type === 'customer') {
+      const payload = {
+        company_name: text('company_name'),
+        contact_name: text('contact_name'),
+        email: optional('email'),
+        phone: optional('phone'),
+        status: text('status') || 'Active',
+        customer_tier: text('customer_tier') || 'Standard',
+        total_revenue: numeric('total_revenue') ?? 0,
+        currency: text('currency') || 'USD',
+        contact_id: optional('contact_id'),
+        owner_id: numeric('owner_id'),
+        notes: optional('notes'),
+      };
+      void save(() => form.record
+        ? crmService.updateCustomer(workspaceId, form.record.id, payload)
+        : crmService.createCustomer(workspaceId, payload));
+    } else if (form.type === 'pipeline') {
+      const payload = {
+        name: text('name'),
+        slug: optional('slug'),
+        description: optional('description'),
+        display_order: numeric('display_order') ?? 1,
+      };
+      void save(() => form.record
+        ? crmService.updatePipeline(workspaceId, form.record.id, payload)
+        : crmService.createPipeline(workspaceId, payload));
+    } else {
+      const payload = {
+        name: text('name'),
+        code: optional('code'),
+        color: optional('color'),
+        probability: numeric('probability') ?? 0,
+        display_order: numeric('display_order') ?? 1,
+        is_won: values.is_won === 'on',
+        is_lost: values.is_lost === 'on',
+      };
+      void save(() => form.record
+        ? crmService.updateStage(workspaceId, form.record.id, payload)
+        : crmService.createStage(workspaceId, form.pipelineId, payload));
+    }
+  };
+
+  const remove = async (label: string, operation: () => Promise<unknown>) => {
+    if (!window.confirm(`Delete this ${label}?`)) return;
+    await save(operation);
+  };
+
+  const moveStage = async (lead: CrmLead, stage: CrmStage) => {
+    if (!workspaceId || lead.stage_id === stage.id) return;
+    await save(() => crmService.updateLead(workspaceId, lead.id, {
+      pipeline_id: stage.pipeline_id,
+      stage_id: stage.id,
+    }));
+  };
+
+  const reorder = async (index: number, direction: -1 | 1) => {
+    if (!workspaceId || !selectedPipeline) return;
+    const stages = [...selectedPipeline.stages].sort((a, b) => a.display_order - b.display_order);
+    const target = index + direction;
+    if (target < 0 || target >= stages.length) return;
+    [stages[index], stages[target]] = [stages[target], stages[index]];
+    const ordered = stages.map((stage, stageIndex) => ({ ...stage, display_order: stageIndex + 1 }));
+    await save(async () => {
+      await crmService.reorderStages(workspaceId, ordered.map(({ id, display_order }) => ({ id, display_order })));
     });
-  }, [leads]);
+  };
 
-  // Dynamic KPI counts based on live CRM state
-  const dynamicKpis = useMemo(() => {
-    const leadDelta = leads.length - initialCrmLeads.length;
-    const initialConverted = initialCrmLeads.filter((l) => l.leadStatus === 'Converted').length;
-    const currentConverted = leads.filter((l) => l.leadStatus === 'Converted').length;
-    const convertedDelta = currentConverted - initialConverted;
+  const createNote = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!workspaceId || !selectedLead || !noteText.trim()) return;
+    await save(async () => {
+      await crmService.createNote(workspaceId, { lead_id: selectedLead.id, content: noteText.trim() });
+      setNoteText('');
+      await loadLeadDetails(selectedLead.id);
+    });
+  };
 
-    const totalVal = Math.max(0, crmKpiStats.totalLeads.value + leadDelta);
-    const convertedVal = Math.max(0, crmKpiStats.convertedCustomers.value + convertedDelta);
-    const rateVal = totalVal > 0 ? ((convertedVal / totalVal) * 100).toFixed(1) + '%' : '0.0%';
-
-    return {
-      totalLeads: totalVal,
-      convertedCustomers: convertedVal,
-      conversionRate: rateVal,
-    };
-  }, [leads]);
-
-  // Filtered & Sorted Leads
-  const filteredLeads = useMemo(() => {
-    return leads
-      .filter((lead) => {
-        const matchesSearch =
-          lead.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lead.sourceCampaign.toLowerCase().includes(searchQuery.toLowerCase());
-
-        const matchesStatus =
-          statusFilter === 'All' || lead.leadStatus === statusFilter;
-
-        const matchesCampaign =
-          campaignFilter === 'All' || lead.sourceCampaign === campaignFilter;
-
-        const matchesAssignee =
-          assigneeFilter === 'All' || lead.assignedTo.name === assigneeFilter;
-
-        return matchesSearch && matchesStatus && matchesCampaign && matchesAssignee;
-      })
-      .sort((a, b) => {
-        if (sortOption === 'name') return a.name.localeCompare(b.name);
-        if (sortOption === 'company') return a.company.localeCompare(b.company);
-        if (sortOption === 'oldest') {
-          return new Date(a.createdDate).getTime() - new Date(b.createdDate).getTime();
-        }
-        return new Date(b.createdDate).getTime() - new Date(a.createdDate).getTime();
+  const submitActivity = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!workspaceId || !selectedLead) return;
+    await save(async () => {
+      await crmService.createActivity(workspaceId, {
+        lead_id: selectedLead.id,
+        type: activityForm.type,
+        title: activityForm.title.trim(),
+        description: activityForm.description.trim() || null,
+        activity_date: new Date(activityForm.activity_date).toISOString(),
       });
-  }, [leads, searchQuery, statusFilter, campaignFilter, assigneeFilter, sortOption]);
-
-  // Open Add Lead
-  const handleOpenAdd = () => {
-    setLeadFormData({
-      name: '',
-      company: '',
-      email: '',
-      phone: '+212 6 ',
-      sourceCampaign: 'Autumn Launch 2026',
-      relatedProject: 'Autumn Sales Growth',
-      leadStatus: 'New',
-      assignedToName: 'Sara El Amrani',
-      assignedToInitials: 'SE',
-      preferredContact: 'Email',
-      location: 'Casablanca, Morocco',
-      nextFollowUp: '18 Oct 2026, 10:00 AM',
-      internalNotes: '',
+      setActivityForm({ type: 'call', title: '', description: '', activity_date: dateTimeLocal(new Date().toISOString()) });
+      await loadLeadDetails(selectedLead.id);
     });
-    setFormError('');
-    setIsAddModalOpen(true);
   };
 
-  // Open Edit Lead
-  const handleOpenEdit = (lead: CRMLead) => {
-    setLeadFormData({
-      name: lead.name,
-      company: lead.company,
-      email: lead.email,
-      phone: lead.phone,
-      sourceCampaign: lead.sourceCampaign,
-      relatedProject: lead.relatedProject || 'Autumn Sales Growth',
-      leadStatus: lead.leadStatus,
-      assignedToName: lead.assignedTo.name,
-      assignedToInitials: lead.assignedTo.initials,
-      preferredContact: lead.preferredContact || 'Email',
-      location: lead.location || 'Casablanca, Morocco',
-      nextFollowUp: lead.nextFollowUp || '18 Oct 2026, 10:00 AM',
-      internalNotes: lead.internalNotes || '',
-    });
-    setSelectedLeadId(lead.id);
-    setFormError('');
-    setMenuOpenLeadId(null);
-    setIsEditModalOpen(true);
+  const convertLead = async (lead: CrmLead) => {
+    if (!workspaceId || !window.confirm(`Convert ${lead.name} into a customer?`)) return;
+    await save(() => crmService.convertLead(workspaceId, lead.id));
+    setSection('customers');
   };
 
-  // Submit Add Lead
-  const handleSaveAdd = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!leadFormData.name.trim()) {
-      setFormError('Please enter a contact name.');
-      return;
-    }
-    if (!leadFormData.company.trim()) {
-      setFormError('Please enter a company name.');
-      return;
-    }
-    if (!leadFormData.email.trim() || !leadFormData.email.includes('@')) {
-      setFormError('Please enter a valid email address.');
-      return;
-    }
-
-    // Check duplicate email
-    if (leads.some((l) => l.email.toLowerCase() === leadFormData.email.trim().toLowerCase())) {
-      setFormError('A lead with this email address already exists in the system.');
-      return;
-    }
-
-    const newLead: CRMLead = {
-      id: `lead-${Date.now()}`,
-      name: leadFormData.name.trim(),
-      company: leadFormData.company.trim(),
-      email: leadFormData.email.trim(),
-      phone: leadFormData.phone.trim(),
-      sourceCampaign: leadFormData.sourceCampaign,
-      relatedProject: leadFormData.relatedProject,
-      leadStatus: leadFormData.leadStatus,
-      assignedTo: {
-        name: leadFormData.assignedToName,
-        initials: leadFormData.assignedToInitials,
-        avatarBg: 'bg-[#EDE9FE]',
-        avatarColor: 'text-[#6D28D9]',
-      },
-      createdDate: '15 Oct 2026',
-      preferredContact: leadFormData.preferredContact,
-      location: leadFormData.location,
-      nextFollowUp: leadFormData.nextFollowUp,
-      internalNotes: leadFormData.internalNotes,
-      activities: [
-        {
-          id: `act-${Date.now()}`,
-          title: 'Lead created',
-          date: '15 Oct 2026, 11:00 AM',
-          description: `Lead added manually from ${leadFormData.sourceCampaign}.`,
-          type: 'create',
-        },
-      ],
-    };
-
-    setLeads([newLead, ...leads]);
-    setSelectedLeadId(newLead.id);
-    setIsDetailPanelOpen(true);
-    setIsAddModalOpen(false);
-    showToast(`Lead "${newLead.name}" created successfully.`);
-  };
-
-  // Submit Edit Lead
-  const handleSaveEdit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLead) return;
-    if (!leadFormData.name.trim()) {
-      setFormError('Please enter a contact name.');
-      return;
-    }
-    if (!leadFormData.company.trim()) {
-      setFormError('Please enter a company name.');
-      return;
-    }
-
-    setLeads((prev) =>
-      prev.map((item) =>
-        item.id === selectedLead.id
-          ? {
-              ...item,
-              name: leadFormData.name.trim(),
-              company: leadFormData.company.trim(),
-              email: leadFormData.email.trim(),
-              phone: leadFormData.phone.trim(),
-              sourceCampaign: leadFormData.sourceCampaign,
-              relatedProject: leadFormData.relatedProject,
-              leadStatus: leadFormData.leadStatus,
-              assignedTo: {
-                name: leadFormData.assignedToName,
-                initials: leadFormData.assignedToInitials,
-                avatarBg: 'bg-[#EDE9FE]',
-                avatarColor: 'text-[#6D28D9]',
-              },
-              preferredContact: leadFormData.preferredContact,
-              location: leadFormData.location,
-              nextFollowUp: leadFormData.nextFollowUp,
-              internalNotes: leadFormData.internalNotes,
-            }
-          : item
-      )
-    );
-    setIsEditModalOpen(false);
-    showToast('Lead details updated successfully.');
-  };
-
-  // Delete Lead
-  const handleDeleteLead = (id: string) => {
-    setLeads((prev) => prev.filter((l) => l.id !== id));
-    if (selectedLeadId === id) {
-      const remaining = leads.filter((l) => l.id !== id);
-      if (remaining.length > 0) {
-        setSelectedLeadId(remaining[0].id);
-      }
-    }
-    setDeleteConfirmId(null);
-    setMenuOpenLeadId(null);
-    showToast('Lead removed from CRM.');
-  };
-
-  // Quick Change Lead Status
-  const handleQuickStatusChange = (leadId: string, newStatus: CRMLeadStatus) => {
-    setLeads((prev) =>
-      prev.map((l) => {
-        if (l.id === leadId) {
-          const updatedActivities = [
-            ...l.activities,
-            {
-              id: `act-${Date.now()}`,
-              title: `Status changed to ${newStatus}`,
-              date: 'Just now',
-              description: `Status updated from ${l.leadStatus} to ${newStatus}.`,
-              type: 'note' as const,
-            },
-          ];
-          return { ...l, leadStatus: newStatus, activities: updatedActivities };
-        }
-        return l;
-      })
-    );
-    setMenuOpenLeadId(null);
-    showToast(`Status updated to ${newStatus}.`);
-  };
-
-  // Add Activity to selected lead
-  const handleAddActivity = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLead || !activityForm.title.trim()) return;
-
-    const newActivity: CRMLeadActivity = {
-      id: `act-${Date.now()}`,
-      title: activityForm.title.trim(),
-      date: activityForm.date,
-      description: activityForm.description.trim() || 'Activity recorded.',
-      type: activityForm.type,
-    };
-
-    setLeads((prev) =>
-      prev.map((l) =>
-        l.id === selectedLead.id
-          ? { ...l, activities: [...l.activities, newActivity] }
-          : l
-      )
-    );
-
-    setIsAddActivityModalOpen(false);
-    setActivityForm({
-      title: '',
-      date: '15 Oct 2026, 03:00 PM',
-      description: '',
-      type: 'call',
-    });
-    showToast('Activity logged to timeline.');
-  };
-
-  // CSV File Handler & Parser
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setCsvFile(file);
-    setCsvErrors([]);
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target?.result as string;
-      if (!text) return;
-
-      const lines = text
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-      if (lines.length <= 1) {
-        setCsvErrors(['CSV file must have a header row and at least one data row.']);
-        return;
-      }
-
-      const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, '').toLowerCase());
-      const nameIdx = headers.findIndex((h) => h.includes('name'));
-      const companyIdx = headers.findIndex((h) => h.includes('company'));
-      const emailIdx = headers.findIndex((h) => h.includes('email'));
-      const phoneIdx = headers.findIndex((h) => h.includes('phone'));
-      const statusIdx = headers.findIndex((h) => h.includes('status'));
-
-      if (nameIdx === -1 || emailIdx === -1) {
-        setCsvErrors(['CSV header must include at least "Name" and "Email" columns.']);
-        return;
-      }
-
-      const parsed: any[] = [];
-      const errors: string[] = [];
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-        const name = cols[nameIdx];
-        const email = cols[emailIdx];
-        const company = companyIdx !== -1 ? cols[companyIdx] : 'Unknown';
-        const phone = phoneIdx !== -1 ? cols[phoneIdx] : '+212 6 --';
-        const rawStatus = statusIdx !== -1 ? cols[statusIdx] : 'New';
-
-        if (!name || !email) {
-          errors.push(`Row ${i + 1}: Missing name or email.`);
-          continue;
-        }
-
-        let status: CRMLeadStatus = 'New';
-        if (['new', 'contacted', 'qualified', 'converted'].includes(rawStatus.toLowerCase())) {
-          status = (rawStatus[0].toUpperCase() + rawStatus.slice(1).toLowerCase()) as CRMLeadStatus;
-        }
-
-        parsed.push({
-          name,
-          email,
-          company,
-          phone,
-          status,
-        });
-      }
-
-      setCsvPreviewRows(parsed);
-      setCsvErrors(errors);
-    };
-    reader.readAsText(file);
-  };
-
-  const handleConfirmImport = () => {
-    if (csvPreviewRows.length === 0) return;
-
-    let addedCount = 0;
-    let duplicateCount = 0;
-    const newItems: CRMLead[] = [];
-
-    csvPreviewRows.forEach((row, index) => {
-      // Check existing leads
-      if (leads.some((l) => l.email.toLowerCase() === row.email.toLowerCase())) {
-        duplicateCount++;
-        return;
-      }
-
-      newItems.push({
-        id: `lead-imported-${Date.now()}-${index}`,
-        name: row.name,
-        company: row.company,
-        email: row.email,
-        phone: row.phone,
-        sourceCampaign: 'Autumn Launch 2026',
-        relatedProject: 'Autumn Sales Growth',
-        leadStatus: row.status,
-        assignedTo: {
-          name: 'Sara El Amrani',
-          initials: 'SE',
-          avatarBg: 'bg-[#EDE9FE]',
-          avatarColor: 'text-[#6D28D9]',
-        },
-        createdDate: '15 Oct 2026',
-        preferredContact: 'Email',
-        location: 'Morocco',
-        nextFollowUp: '19 Oct 2026, 10:00 AM',
-        internalNotes: 'Imported via CSV.',
-        activities: [
-          {
-            id: `act-imp-${Date.now()}-${index}`,
-            title: 'Lead imported',
-            date: '15 Oct 2026, 11:30 AM',
-            description: 'Imported through bulk CSV file upload.',
-            type: 'create',
-          },
-        ],
-      });
-      addedCount++;
-    });
-
-    if (newItems.length > 0) {
-      setLeads((prev) => [...newItems, ...prev]);
-      setSelectedLeadId(newItems[0].id);
-    }
-
-    setIsImportModalOpen(false);
-    setCsvFile(null);
-    setCsvPreviewRows([]);
-    showToast(
-      `Imported ${addedCount} lead${addedCount === 1 ? '' : 's'}.${
-        duplicateCount > 0 ? ` Skipped ${duplicateCount} duplicate(s).` : ''
-      }`
-    );
-  };
-
-  // Helper for Status Badge
-  const getStatusBadge = (status: CRMLeadStatus) => {
-    switch (status) {
-      case 'New':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#EDE9FE] text-[#6D28D9]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#6D28D9]" />
-            New
-          </span>
-        );
-      case 'Contacted':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#E0F2FE] text-[#0284C7]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#0284C7]" />
-            Contacted
-          </span>
-        );
-      case 'Qualified':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#FEF3C7] text-[#D97706]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#D97706]" />
-            Qualified
-          </span>
-        );
-      case 'Converted':
-        return (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#CCFBF1] text-[#0D9488]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488]" />
-            Converted
-          </span>
-        );
-    }
-  };
+  if (isLoadingWorkspaces) return <p className="p-6 text-sm text-slate-500">Loading workspaces…</p>;
+  if (!hasWorkspace) return <p className="p-6 text-sm text-slate-600">Select or create a workspace to use CRM.</p>;
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto pb-12 font-sans text-[#1E1B4B]">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#1E1B4B] text-white px-4 py-2.5 rounded-lg shadow-xl text-sm flex items-center gap-2 border border-slate-700 animate-fade-in">
-          <Check className="w-4 h-4 text-emerald-400" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-xs text-[#64748B]">
-        <span className="hover:text-[#1E1B4B] cursor-pointer" onClick={() => navigate('/')}>
-          Customers
-        </span>
-        <span>/</span>
-        <span className="text-[#1E1B4B] font-medium">CRM & Leads</span>
-      </div>
-
-      {/* Page Title & Primary Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <main className="mx-auto max-w-[1500px] space-y-5 p-4 text-slate-900 sm:p-6">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl lg:text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
-            CRM & Leads
-          </h1>
-          <p className="text-sm text-[#64748B] mt-1">
-            Manage contacts, track lead status and monitor customer conversion.
-          </p>
+          <p className="text-sm text-slate-500">Workspace CRM</p>
+          <h1 className="mt-1 text-2xl font-bold">Customers &amp; Leads</h1>
+          <p className="mt-1 text-sm text-slate-600">{currentWorkspace.name} · live CRM records</p>
         </div>
-
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsImportModalOpen(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-white border border-[#DDD6FE] text-[#6D28D9] hover:bg-[#F5F3FF] text-sm font-semibold shadow-2xs transition-colors"
-          >
-            <Upload className="w-4 h-4 stroke-[2.2]" />
-            <span>Import CSV</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={handleOpenAdd}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-sm font-semibold shadow-2xs transition-colors"
-          >
-            <Plus className="w-4 h-4 stroke-[2.5]" />
-            <span>Add Lead</span>
-          </button>
+        <div className="flex flex-wrap gap-2">
+          <button className={buttonClass} onClick={() => void refresh()} disabled={loading}>{loading ? 'Loading…' : 'Refresh'}</button>
+          {section === 'leads' && <button className={primaryClass} onClick={() => setForm({ type: 'lead' })}>Add lead</button>}
+          {section === 'contacts' && <button className={primaryClass} onClick={() => setForm({ type: 'contact' })}>Add contact</button>}
+          {section === 'customers' && <button className={primaryClass} onClick={() => setForm({ type: 'customer' })}>Add customer</button>}
+          {section === 'pipeline' && <button className={primaryClass} onClick={() => setForm({ type: 'pipeline' })}>New pipeline</button>}
         </div>
-      </div>
+      </header>
 
-      {/* CRM Top KPI Cards (Three equal-width white cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* KPI 1: Leads from Autumn Launch 2026 */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-4.5 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center shrink-0">
-              <Users className="w-5 h-5 stroke-[2]" />
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#94A3B8]" />
-          </div>
-          <div className="mt-3">
-            <div className="text-xs font-medium text-[#64748B]">
-              {crmKpiStats.totalLeads.label}
-            </div>
-            <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {dynamicKpis.totalLeads}
-            </div>
-            <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>+{crmKpiStats.totalLeads.trend}% {crmKpiStats.totalLeads.trendLabel}</span>
-            </div>
-          </div>
-        </div>
+      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
-        {/* KPI 2: Converted Customers */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-4.5 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-[#CCFBF1] text-[#0D9488] flex items-center justify-center shrink-0">
-              <UserCheck className="w-5 h-5 stroke-[2]" />
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#94A3B8]" />
-          </div>
-          <div className="mt-3">
-            <div className="text-xs font-medium text-[#64748B]">
-              {crmKpiStats.convertedCustomers.label}
-            </div>
-            <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {dynamicKpis.convertedCustomers}
-            </div>
-            <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>+{crmKpiStats.convertedCustomers.trend}% {crmKpiStats.convertedCustomers.trendLabel}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* KPI 3: Lead-to-customer Conversion Rate */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] p-4.5 shadow-2xs flex flex-col justify-between hover:shadow-xs transition-shadow">
-          <div className="flex items-start justify-between">
-            <div className="w-10 h-10 rounded-xl bg-[#E0F2FE] text-[#0284C7] flex items-center justify-center shrink-0">
-              <TrendingUp className="w-5 h-5 stroke-[2]" />
-            </div>
-            <ChevronRight className="w-4 h-4 text-[#94A3B8]" />
-          </div>
-          <div className="mt-3">
-            <div className="text-xs font-medium text-[#64748B]">
-              {crmKpiStats.conversionRate.label}
-            </div>
-            <div className="text-2xl font-extrabold text-[#1E1B4B] tracking-tight mt-0.5">
-              {dynamicKpis.conversionRate}
-            </div>
-            <div className="flex items-center gap-1 mt-1.5 text-xs text-[#0D9488] font-semibold">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>+{crmKpiStats.conversionRate.trend}% {crmKpiStats.conversionRate.trendLabel}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Lead Funnel Full-Width Card */}
-      <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-2xs">
-        <div className="flex items-center justify-between pb-4">
-          <h2 className="text-base font-bold text-[#1E1B4B]">Lead Funnel</h2>
-          <div className="flex items-center gap-1 text-xs text-[#64748B]">
-            <span>Based on <strong>CRM</strong> lead records</span>
-            <Info className="w-3.5 h-3.5 text-[#94A3B8]" />
-          </div>
-        </div>
-
-        {/* Horizontal 4-Stage Segmented Funnel with Chevron Connections */}
-        <div className="relative pt-2 pb-1">
-          <div className="grid grid-cols-4 gap-1">
-            {dynamicFunnelStages.map((stage, idx) => (
-              <div
-                key={stage.status}
-                onClick={() => setStatusFilter(statusFilter === stage.status ? 'All' : stage.status)}
-                className="cursor-pointer group flex flex-col items-center"
-              >
-                {/* Segment Chevron Shape */}
-                <div
-                  className="w-full h-8 flex items-center justify-center relative transition-transform duration-200 group-hover:scale-[1.02]"
-                  style={{
-                    backgroundColor: stage.color,
-                    clipPath:
-                      idx === 0
-                        ? 'polygon(0% 0%, 94% 0%, 100% 50%, 94% 100%, 0% 100%)'
-                        : idx === dynamicFunnelStages.length - 1
-                        ? 'polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, 6% 50%)'
-                        : 'polygon(0% 0%, 94% 0%, 100% 50%, 94% 100%, 0% 100%, 6% 50%)',
-                  }}
-                >
-                  {/* Central Dot Marker */}
-                  <div
-                    className="w-2.5 h-2.5 rounded-full transition-transform group-hover:scale-125 shadow-xs"
-                    style={{ backgroundColor: stage.dotColor }}
-                  />
-                </div>
-
-                {/* Status & Count Label below segment */}
-                <div className="text-center mt-3">
-                  <div className="text-xs font-medium text-[#64748B] group-hover:text-[#1E1B4B]">
-                    {stage.label}
-                  </div>
-                  <div className="text-base font-bold text-[#1E1B4B]">
-                    {stage.count}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Main CRM Content Layout: Left Table (~70%) + Right Detail Panel (~30%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Column: Leads & Contacts Table */}
-        <div className={`${isDetailPanelOpen && selectedLead ? 'lg:col-span-8' : 'lg:col-span-12'} bg-white rounded-xl border border-[#E2E8F0] shadow-2xs overflow-hidden transition-all duration-300`}>
-          {/* Card Header & Filter Toolbar */}
-          <div className="p-5 border-b border-[#E2E8F0] space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-[#1E1B4B]">Leads & Contacts</h2>
-              {!isDetailPanelOpen && selectedLead && (
-                <button
-                  type="button"
-                  onClick={() => setIsDetailPanelOpen(true)}
-                  className="text-xs text-[#6D28D9] font-medium hover:underline flex items-center gap-1"
-                >
-                  <span>Open Detail Panel</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Filter Toolbar Controls */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Search input */}
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" aria-hidden="true" />
-                <input
-                  type="text"
-                  id="crm-search-input"
-                  aria-label="Search leads, companies, or emails"
-                  placeholder="Search leads, companies, or emails..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] text-xs text-[#1E1B4B] placeholder-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] focus:bg-white"
-                />
-              </div>
-
-              {/* Status dropdown */}
-              <div className="relative">
-                <select
-                  id="crm-status-filter"
-                  aria-label="Filter by lead status"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
-                >
-                  <option value="All">Status (All)</option>
-                  <option value="New">New</option>
-                  <option value="Contacted">Contacted</option>
-                  <option value="Qualified">Qualified</option>
-                  <option value="Converted">Converted</option>
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-              </div>
-
-              {/* Campaign dropdown */}
-              <div className="relative">
-                <select
-                  id="crm-campaign-filter"
-                  aria-label="Filter by source campaign"
-                  value={campaignFilter}
-                  onChange={(e) => setCampaignFilter(e.target.value)}
-                  className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
-                >
-                  <option value="All">Campaign (All)</option>
-                  <option value="Autumn Launch 2026">Autumn Launch 2026</option>
-                  <option value="October Retargeting">October Retargeting</option>
-                  <option value="Summer Clearance">Summer Clearance</option>
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-              </div>
-
-              {/* Assignee dropdown */}
-              <div className="relative">
-                <select
-                  id="crm-assignee-filter"
-                  aria-label="Filter by assignee"
-                  value={assigneeFilter}
-                  onChange={(e) => setAssigneeFilter(e.target.value)}
-                  className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
-                >
-                  <option value="All">Assignee (All)</option>
-                  <option value="Sara El Amrani">Sara El Amrani</option>
-                  <option value="Imane Benkirane">Imane Benkirane</option>
-                  <option value="Yassine Bouchra">Yassine Bouchra</option>
-                  <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-              </div>
-
-              {/* Sort dropdown */}
-              <div className="relative">
-                <select
-                  id="crm-sort-option"
-                  aria-label="Sort leads list"
-                  value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value as any)}
-                  className="pl-3 pr-7 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] focus:outline-none appearance-none cursor-pointer"
-                >
-                  <option value="recent">Sort by: Recent</option>
-                  <option value="oldest">Sort by: Oldest</option>
-                  <option value="name">Sort by: Name</option>
-                  <option value="company">Sort by: Company</option>
-                </select>
-                <ChevronDown className="w-3 h-3 text-[#94A3B8] absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-              </div>
-
-              {/* Reset filter button if any active */}
-              {(searchQuery || statusFilter !== 'All' || campaignFilter !== 'All' || assigneeFilter !== 'All') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStatusFilter('All');
-                    setCampaignFilter('All');
-                    setAssigneeFilter('All');
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#6D28D9] hover:bg-[#EDE9FE] transition-colors"
-                >
-                  Reset filters
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* CRM Data Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[#E2E8F0] bg-[#FAF9FD] text-[11px] font-semibold text-[#64748B]">
-                  <th className="py-2.5 px-3 w-8">
-                    <input
-                      type="checkbox"
-                      id="crm-select-all"
-                      aria-label="Select all leads"
-                      checked={filteredLeads.length > 0 && filteredLeads.every((l) => l.id === selectedLeadId)}
-                      onChange={() => {
-                        if (filteredLeads.length > 0) {
-                          setSelectedLeadId(filteredLeads[0].id);
-                          setIsDetailPanelOpen(true);
-                        }
-                      }}
-                      className="rounded border-[#CBD5E1] text-[#6D28D9] focus:ring-0 cursor-pointer"
-                    />
-                  </th>
-                  <th className="py-2.5 px-3">Name</th>
-                  <th className="py-2.5 px-3">Company</th>
-                  <th className="py-2.5 px-3">Email</th>
-                  <th className="py-2.5 px-3">Phone</th>
-                  <th className="py-2.5 px-3">Source Campaign</th>
-                  <th className="py-2.5 px-3">Lead Status</th>
-                  <th className="py-2.5 px-3">Assigned To</th>
-                  <th className="py-2.5 px-3">Created Date</th>
-                  <th className="py-2.5 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F1F5F9] text-xs">
-                {filteredLeads.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="py-12 text-center">
-                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
-                        <div className="w-10 h-10 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center mb-3">
-                          <Users className="w-5 h-5" />
-                        </div>
-                        <h4 className="text-sm font-bold text-[#1E1B4B]">No leads found</h4>
-                        <p className="text-xs text-[#64748B] mt-1">
-                          {leads.length === 0
-                            ? 'No CRM leads exist yet. Click "Add Lead" or import a CSV file to get started.'
-                            : 'No leads match your current search and filter criteria.'}
-                        </p>
-                        <div className="mt-4 flex items-center gap-2">
-                          {(searchQuery || statusFilter !== 'All' || campaignFilter !== 'All' || assigneeFilter !== 'All') ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSearchQuery('');
-                                setStatusFilter('All');
-                                if (campaignFilter !== 'All') setCampaignFilter('All');
-                                if (assigneeFilter !== 'All') setAssigneeFilter('All');
-                              }}
-                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#EDE9FE] text-[#6D28D9] hover:bg-[#DDD6FE] transition-colors"
-                            >
-                              Clear filters
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleOpenAdd}
-                              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#6D28D9] text-white hover:bg-[#5B21B6] transition-colors"
-                            >
-                              Add New Lead
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLeads.map((lead) => {
-                    const isSelected = selectedLead?.id === lead.id;
-                    return (
-                      <tr
-                        key={lead.id}
-                        onClick={() => {
-                          setSelectedLeadId(lead.id);
-                          setIsDetailPanelOpen(true);
-                        }}
-                        className={`cursor-pointer transition-colors ${
-                          isSelected
-                            ? 'bg-[#F5F3FF] border-l-2 border-[#6D28D9]'
-                            : 'hover:bg-[#FAF9FD]'
-                        }`}
-                      >
-                        <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => {
-                              setSelectedLeadId(lead.id);
-                              setIsDetailPanelOpen(true);
-                            }}
-                            className="rounded border-[#CBD5E1] text-[#6D28D9] focus:ring-0 cursor-pointer"
-                          />
-                        </td>
-
-                        <td className="py-3 px-3 font-semibold text-[#1E1B4B] whitespace-nowrap">
-                          {lead.name}
-                        </td>
-
-                        <td className="py-3 px-3 text-[#64748B] whitespace-nowrap">
-                          {lead.company}
-                        </td>
-
-                        <td className="py-3 px-3 text-[#64748B] whitespace-nowrap">
-                          {lead.email}
-                        </td>
-
-                        <td className="py-3 px-3 text-[#64748B] whitespace-nowrap">
-                          {lead.phone}
-                        </td>
-
-                        <td className="py-3 px-3 text-[#6D28D9] whitespace-nowrap">
-                          {lead.sourceCampaign}
-                        </td>
-
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          {getStatusBadge(lead.leadStatus)}
-                        </td>
-
-                        <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center font-bold text-[9px] shrink-0">
-                              {lead.assignedTo.initials}
-                            </span>
-                            <span className="text-[#1E1B4B]">{lead.assignedTo.name}</span>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-3 text-[#64748B] whitespace-nowrap">
-                          {lead.createdDate}
-                        </td>
-
-                        <td className="py-3 px-3 text-right whitespace-nowrap relative" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setMenuOpenLeadId(menuOpenLeadId === lead.id ? null : lead.id)
-                            }
-                            className="p-1 rounded-md text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100"
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </button>
-
-                          {menuOpenLeadId === lead.id && (
-                            <div className="absolute right-0 mt-1 w-36 bg-white rounded-lg shadow-lg border border-[#E2E8F0] py-1 z-30 text-xs text-left">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEdit(lead)}
-                                className="w-full text-left px-3 py-1.5 hover:bg-[#F5F3FF] text-[#1E1B4B] flex items-center gap-2"
-                              >
-                                <Pencil className="w-3.5 h-3.5 text-[#6D28D9]" />
-                                <span>Edit Lead</span>
-                              </button>
-                              <div className="border-t border-[#F1F5F9] my-1" />
-                              <div className="px-3 py-1 text-[10px] uppercase font-semibold text-[#94A3B8]">
-                                Set Status
-                              </div>
-                              {(['New', 'Contacted', 'Qualified', 'Converted'] as CRMLeadStatus[]).map((st) => (
-                                <button
-                                  key={st}
-                                  type="button"
-                                  onClick={() => handleQuickStatusChange(lead.id, st)}
-                                  className="w-full text-left px-3 py-1 hover:bg-[#F5F3FF] text-[#1E1B4B] text-xs"
-                                >
-                                  {st}
-                                </button>
-                              ))}
-                              <div className="border-t border-[#F1F5F9] my-1" />
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmId(lead.id)}
-                                className="w-full text-left px-3 py-1.5 hover:bg-rose-50 text-rose-600 flex items-center gap-2"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete Lead</span>
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Table Footer with Pagination */}
-          <div className="p-4 border-t border-[#E2E8F0] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#64748B]">
-            <div>
-              Showing {filteredLeads.length === 0 ? 0 : 1}–{filteredLeads.length} of {filteredLeads.length} leads
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled
-                className="px-2.5 py-1 rounded-md border border-[#E2E8F0] text-[#94A3B8] bg-slate-50 cursor-not-allowed"
-              >
-                &lt;
-              </button>
-              <button
-                type="button"
-                className="px-3 py-1 rounded-md border border-[#6D28D9] bg-[#6D28D9] text-white font-medium"
-              >
-                1
-              </button>
-              <button
-                type="button"
-                disabled
-                className="px-2.5 py-1 rounded-md border border-[#E2E8F0] text-[#94A3B8] bg-slate-50 cursor-not-allowed"
-              >
-                &gt;
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Selected Lead Detail Panel (~30%) */}
-        {isDetailPanelOpen && selectedLead && (
-          <div className="lg:col-span-4 bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-2xs space-y-5">
-            {/* Top Header: Lead Name + Status + Controls */}
-            <div className="flex items-start justify-between pb-3 border-b border-[#F1F5F9]">
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-[#1E1B4B]">{selectedLead.name}</h3>
-                {getStatusBadge(selectedLead.leadStatus)}
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenEdit(selectedLead)}
-                  className="p-1.5 rounded-md text-[#6D28D9] hover:bg-[#EDE9FE] transition-colors"
-                  title="Edit Lead"
-                  aria-label="Edit lead"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsDetailPanelOpen(false)}
-                  className="p-1.5 rounded-md text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
-                  title="Close Detail Panel"
-                  aria-label="Close detail panel"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Contact Information Section */}
-            <div className="space-y-2.5 text-xs">
-              <h4 className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                Contact information
-              </h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2.5 text-[#1E1B4B]">
-                  <Building className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                  <span>{selectedLead.company}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-[#1E1B4B]">
-                  <Mail className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                  <a
-                    href={`mailto:${selectedLead.email}`}
-                    className="hover:text-[#6D28D9] truncate"
-                  >
-                    {selectedLead.email}
-                  </a>
-                </div>
-                <div className="flex items-center gap-2.5 text-[#1E1B4B]">
-                  <Phone className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                  <span>{selectedLead.phone}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-[#1E1B4B]">
-                  <MapPin className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                  <span>{selectedLead.location || 'Casablanca, Morocco'}</span>
-                </div>
-                <div className="flex items-center gap-2.5 text-[#1E1B4B]">
-                  <MessageSquare className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                  <span>Preferred channel: {selectedLead.preferredContact || 'Email'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Linked Campaign & Project (Two Boxes) */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div
-                onClick={() => navigate('/campaigns')}
-                className="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] hover:bg-[#F5F3FF] hover:border-[#DDD6FE] cursor-pointer transition-colors"
-              >
-                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
-                  <Megaphone className="w-3 h-3 text-[#6D28D9]" />
-                  <span>Linked campaign</span>
-                </div>
-                <div className="font-semibold text-[#1E1B4B] mt-1 truncate">
-                  {selectedLead.sourceCampaign}
-                </div>
-              </div>
-
-              <div
-                onClick={() => navigate('/projects')}
-                className="p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] hover:bg-[#F5F3FF] hover:border-[#DDD6FE] cursor-pointer transition-colors"
-              >
-                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
-                  <Folder className="w-3 h-3 text-[#6D28D9]" />
-                  <span>Related project</span>
-                </div>
-                <div className="font-semibold text-[#1E1B4B] mt-1 truncate">
-                  {selectedLead.relatedProject || 'Autumn Sales Growth'}
-                </div>
-              </div>
-            </div>
-
-            {/* Next Follow-up */}
-            <div className="space-y-1.5 text-xs">
-              <h4 className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                Next follow-up
-              </h4>
-              <div className="flex items-center gap-2 p-2.5 rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] text-[#1E1B4B] font-medium">
-                <Calendar className="w-3.5 h-3.5 text-[#6D28D9] shrink-0" />
-                <span>{selectedLead.nextFollowUp || 'None scheduled'}</span>
-              </div>
-            </div>
-
-            {/* Internal Notes */}
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                  Internal notes
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => handleOpenEdit(selectedLead)}
-                  className="text-[10px] text-[#6D28D9] hover:underline flex items-center gap-1"
-                >
-                  <Pencil className="w-2.5 h-2.5" />
-                  <span>Edit</span>
-                </button>
-              </div>
-              <div className="p-3 rounded-lg border border-[#E2E8F0] bg-[#FAF9FD] text-[#1E1B4B] text-xs leading-relaxed">
-                {selectedLead.internalNotes || 'No internal notes recorded yet.'}
-              </div>
-            </div>
-
-            {/* Activity Timeline */}
-            <div className="space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <h4 className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
-                  Activity timeline
-                </h4>
-                <button
-                  type="button"
-                  onClick={() => setIsAddActivityModalOpen(true)}
-                  className="text-[10px] text-[#6D28D9] font-medium hover:underline flex items-center gap-1"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span>Add activity</span>
-                </button>
-              </div>
-
-              {/* Vertical Timeline */}
-              <div className="relative pl-5 space-y-4 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-[1.5px] before:bg-[#E2E8F0]">
-                {selectedLead.activities.map((act: CRMLeadActivity, index: number) => {
-                  const markerColor =
-                    index === 0
-                      ? 'bg-[#6D28D9]'
-                      : index === 1
-                      ? 'bg-[#0284C7]'
-                      : 'bg-[#D97706]';
-                  return (
-                    <div key={act.id} className="relative">
-                      {/* Timeline Dot Marker */}
-                      <span
-                        className={`absolute -left-5 top-1 w-2.5 h-2.5 rounded-full ${markerColor} ring-4 ring-white`}
-                      />
-                      <div className="space-y-0.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-[#1E1B4B]">{act.title}</span>
-                          <span className="text-[10px] text-[#94A3B8]">{act.date}</span>
-                        </div>
-                        <p className="text-[#64748B] text-[11px]">{act.description}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Bottom Panel Actions */}
-            <div className="pt-3 border-t border-[#E2E8F0] flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleOpenEdit(selectedLead)}
-                className="flex-1 py-2 px-3 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-                <span>Edit Lead</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => navigate('/campaigns')}
-                className="py-2 px-3 rounded-lg border border-[#E2E8F0] hover:bg-[#F8F7FC] text-[#1E1B4B] text-xs font-medium flex items-center justify-center gap-1.5 transition-colors"
-              >
-                <span>View Campaign</span>
-                <ExternalLink className="w-3.5 h-3.5 text-[#64748B]" />
-              </button>
-            </div>
-          </div>
+      <nav className="flex flex-wrap gap-2 border-b pb-3">
+        {([['leads', 'Leads'], ['contacts', 'Contacts'], ['customers', 'Customers'], ['pipeline', 'Sales pipeline']] as const).map(([key, label]) =>
+          <button key={key} onClick={() => setSection(key)} className={`rounded-lg px-4 py-2 text-sm font-medium ${section === key ? 'bg-violet-100 text-violet-800' : 'text-slate-600 hover:bg-slate-100'}`}>{label}</button>
         )}
-      </div>
+      </nav>
 
-      {/* Add Lead Modal */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-lead-modal-title">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 id="add-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Add New Lead</h3>
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
-                aria-label="Close dialog"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveAdd} className="p-6 space-y-4">
-              {formError && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2" role="alert">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-lead-name" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name *</label>
-                  <input
-                    id="add-lead-name"
-                    type="text"
-                    value={leadFormData.name}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, name: e.target.value })}
-                    placeholder="e.g. Amina El Idrissi"
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="add-lead-company" className="block text-xs font-semibold text-[#64748B] mb-1">Company *</label>
-                  <input
-                    id="add-lead-company"
-                    type="text"
-                    value={leadFormData.company}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, company: e.target.value })}
-                    placeholder="e.g. Casa Retail Group"
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-lead-email" className="block text-xs font-semibold text-[#64748B] mb-1">Email *</label>
-                  <input
-                    id="add-lead-email"
-                    type="email"
-                    value={leadFormData.email}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, email: e.target.value })}
-                    placeholder="name@company.ma"
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="add-lead-phone" className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
-                  <input
-                    id="add-lead-phone"
-                    type="text"
-                    value={leadFormData.phone}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, phone: e.target.value })}
-                    placeholder="+212 6..."
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-lead-source-campaign" className="block text-xs font-semibold text-[#64748B] mb-1">Source Campaign</label>
-                  <select
-                    id="add-lead-source-campaign"
-                    value={leadFormData.sourceCampaign}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, sourceCampaign: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Autumn Launch 2026">Autumn Launch 2026</option>
-                    <option value="October Retargeting">October Retargeting</option>
-                    <option value="Summer Clearance">Summer Clearance</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="add-lead-related-project" className="block text-xs font-semibold text-[#64748B] mb-1">Related Project</label>
-                  <input
-                    id="add-lead-related-project"
-                    type="text"
-                    value={leadFormData.relatedProject}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, relatedProject: e.target.value })}
-                    placeholder="Project name"
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-lead-status" className="block text-xs font-semibold text-[#64748B] mb-1">Status</label>
-                  <select
-                    id="add-lead-status"
-                    value={leadFormData.leadStatus}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, leadStatus: e.target.value as CRMLeadStatus })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="New">New</option>
-                    <option value="Contacted">Contacted</option>
-                    <option value="Qualified">Qualified</option>
-                    <option value="Converted">Converted</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="add-lead-assignee" className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
-                  <select
-                    id="add-lead-assignee"
-                    value={leadFormData.assignedToName}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      const initials = name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join('')
-                        .slice(0, 2)
-                        .toUpperCase();
-                      setLeadFormData({
-                        ...leadFormData,
-                        assignedToName: name,
-                        assignedToInitials: initials,
-                      });
-                    }}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Sara El Amrani">Sara El Amrani</option>
-                    <option value="Imane Benkirane">Imane Benkirane</option>
-                    <option value="Yassine Bouchra">Yassine Bouchra</option>
-                    <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="add-lead-contact" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Method</label>
-                  <select
-                    id="add-lead-contact"
-                    value={leadFormData.preferredContact}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, preferredContact: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Email">Email</option>
-                    <option value="Phone">Phone</option>
-                    <option value="In-person">In-person</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="add-lead-location" className="block text-xs font-semibold text-[#64748B] mb-1">Location</label>
-                  <input
-                    id="add-lead-location"
-                    type="text"
-                    value={leadFormData.location}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, location: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="add-lead-followup" className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-Up</label>
-                <input
-                  id="add-lead-followup"
-                  type="text"
-                  value={leadFormData.nextFollowUp}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="add-lead-notes" className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
-                <textarea
-                  id="add-lead-notes"
-                  rows={2}
-                  value={leadFormData.internalNotes}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
-                  placeholder="Additional context or requirement details..."
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs"
-                >
-                  Create Lead
-                </button>
-              </div>
-            </form>
+      {section === 'leads' && <>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Metric label="Total leads" value={funnel.reduce((sum, stage) => sum + stage.count, 0)} />
+          {funnel.map((stage) => <Metric key={stage.status} label={stage.label} value={stage.count} />)}
+        </section>
+        <section className="rounded-xl border bg-white p-4">
+          <div className="mb-4 flex flex-wrap gap-2">
+            <input aria-label="Search leads" className={`${inputClass} max-w-sm`} placeholder="Search name, company, email…" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <select aria-label="Filter leads by status" className={`${inputClass} max-w-48`} value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All statuses</option>{leadStatuses.map((value) => <option key={value}>{value}</option>)}
+            </select>
+            <select aria-label="Sort leads" className={`${inputClass} max-w-48`} value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+              <option value="recent">Most recent</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="company">Company</option>
+            </select>
           </div>
-        </div>
-      )}
-
-      {/* Edit Lead Modal */}
-      {isEditModalOpen && selectedLead && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-lead-modal-title">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 id="edit-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Edit Lead Details</h3>
-              <button
-                type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
-                aria-label="Close dialog"
-              >
-                <X className="w-5 h-5" />
-              </button>
+          {!leads.length && !loading ? <Empty text="No leads found. Create your first lead." /> : (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[740px] text-left text-sm">
+                  <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Lead</th><th>Company</th><th>Status</th><th>Source</th><th>Owner</th><th /></tr></thead>
+                  <tbody className="divide-y">{leads.map((lead) => <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)} className={`cursor-pointer hover:bg-violet-50 ${selectedLeadId === lead.id ? 'bg-violet-50' : ''}`}>
+                    <td className="py-3"><span className="block font-medium">{lead.name}</span><span className="text-xs text-slate-500">{lead.email || 'No email'}</span></td>
+                    <td>{lead.company || '—'}</td><td><StatusPill status={lead.status} /></td><td>{lead.source || '—'}</td><td>{lead.assignedTo?.name || '—'}</td>
+                    <td className="whitespace-nowrap text-right" onClick={(event) => event.stopPropagation()}>
+                      <button className="mr-2 text-violet-700 hover:underline" onClick={() => setForm({ type: 'lead', record: lead })}>Edit</button>
+                      {lead.status !== 'Converted' && <button className="mr-2 text-emerald-700 hover:underline" onClick={() => void convertLead(lead)}>Convert</button>}
+                      <button className="text-red-700 hover:underline" onClick={() => void remove('lead', () => crmService.deleteLead(workspaceId, lead.id))}>Delete</button>
+                    </td>
+                  </tr>)}</tbody>
+                </table>
+              </div>
+              {selectedLead && <LeadDetails
+                lead={selectedLead}
+                notes={notes}
+                activities={activities}
+                pipelines={pipelines}
+                detailError={detailError}
+                noteText={noteText}
+                setNoteText={setNoteText}
+                activityForm={activityForm}
+                setActivityForm={setActivityForm}
+                onEdit={() => setForm({ type: 'lead', record: selectedLead })}
+                onCreateNote={createNote}
+                onSubmitActivity={submitActivity}
+                onUpdateNote={(note, content) => void save(async () => { await crmService.updateNote(workspaceId, note.id, { content }); await loadLeadDetails(selectedLead.id); })}
+                onDeleteNote={(note) => void remove('note', async () => { await crmService.deleteNote(workspaceId, note.id); await loadLeadDetails(selectedLead.id); })}
+                onDeleteActivity={(activity) => void remove('activity', async () => { await crmService.deleteActivity(workspaceId, activity.id); await loadLeadDetails(selectedLead.id); })}
+              />}
             </div>
+          )}
+        </section>
+      </>}
 
-            <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
-              {formError && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2" role="alert">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
+      {section === 'contacts' && <RecordSection
+        title="Contacts"
+        search={search}
+        setSearch={setSearch}
+        empty={contacts.length === 0 && !loading}
+        emptyText="No contacts found."
+      >
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Contact</th><th>Company</th><th>Lifecycle</th><th>Status</th><th>Owner</th><th /></tr></thead>
+          <tbody className="divide-y">{contacts.map((contact) => <tr key={contact.id}>
+            <td className="py-3"><button className="block text-left font-medium hover:text-violet-700" onClick={() => void openProfile('contact', contact.id)}>{contact.name}</button><span className="text-xs text-slate-500">{contact.email || 'No email'} · {contact.phone || 'No phone'}</span></td>
+            <td>{contact.company_name || '—'}</td><td>{contact.lifecycle_stage}</td><td>{contact.status}</td><td>{contact.owner?.name || '—'}</td>
+            <td className="whitespace-nowrap text-right"><button className="mr-3 text-violet-700 hover:underline" onClick={() => setForm({ type: 'contact', record: contact })}>Edit</button><button className="text-red-700 hover:underline" onClick={() => void remove('contact', () => crmService.deleteContact(workspaceId, contact.id))}>Delete</button></td>
+          </tr>)}</tbody>
+        </table>
+      </RecordSection>}
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="edit-lead-name" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Name *</label>
-                  <input
-                    id="edit-lead-name"
-                    type="text"
-                    value={leadFormData.name}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, name: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
+      {section === 'customers' && <RecordSection
+        title="Customers"
+        search={search}
+        setSearch={setSearch}
+        empty={customers.length === 0 && !loading}
+        emptyText="No customers found. Convert a qualified lead or add a customer."
+      >
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b text-xs uppercase text-slate-500"><tr><th className="py-3">Customer</th><th>Contact</th><th>Tier</th><th>Status</th><th>Revenue</th><th>Owner</th><th /></tr></thead>
+          <tbody className="divide-y">{customers.map((customer) => <tr key={customer.id}>
+            <td className="py-3"><button className="text-left font-medium hover:text-violet-700" onClick={() => void openProfile('customer', customer.id)}>{customer.company_name}</button></td><td>{customer.contact_name}<span className="block text-xs text-slate-500">{customer.email || 'No email'}</span></td>
+            <td>{customer.customer_tier}</td><td>{customer.status}</td><td>{customer.currency} {customer.total_revenue.toLocaleString()}</td><td>{customer.owner?.name || '—'}</td>
+            <td className="whitespace-nowrap text-right"><button className="mr-3 text-violet-700 hover:underline" onClick={() => setForm({ type: 'customer', record: customer })}>Edit</button><button className="text-red-700 hover:underline" onClick={() => void remove('customer', () => crmService.deleteCustomer(workspaceId, customer.id))}>Delete</button></td>
+          </tr>)}</tbody>
+        </table>
+      </RecordSection>}
 
-                <div>
-                  <label htmlFor="edit-lead-company" className="block text-xs font-semibold text-[#64748B] mb-1">Company *</label>
-                  <input
-                    id="edit-lead-company"
-                    type="text"
-                    value={leadFormData.company}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, company: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="edit-lead-email" className="block text-xs font-semibold text-[#64748B] mb-1">Email *</label>
-                  <input
-                    id="edit-lead-email"
-                    type="email"
-                    value={leadFormData.email}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, email: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="edit-lead-phone" className="block text-xs font-semibold text-[#64748B] mb-1">Phone</label>
-                  <input
-                    id="edit-lead-phone"
-                    type="text"
-                    value={leadFormData.phone}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, phone: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="edit-lead-source-campaign" className="block text-xs font-semibold text-[#64748B] mb-1">Source Campaign</label>
-                  <select
-                    id="edit-lead-source-campaign"
-                    value={leadFormData.sourceCampaign}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, sourceCampaign: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Autumn Launch 2026">Autumn Launch 2026</option>
-                    <option value="October Retargeting">October Retargeting</option>
-                    <option value="Summer Clearance">Summer Clearance</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="edit-lead-related-project" className="block text-xs font-semibold text-[#64748B] mb-1">Related Project</label>
-                  <input
-                    id="edit-lead-related-project"
-                    type="text"
-                    value={leadFormData.relatedProject}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, relatedProject: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="edit-lead-status" className="block text-xs font-semibold text-[#64748B] mb-1">Status</label>
-                  <select
-                    id="edit-lead-status"
-                    value={leadFormData.leadStatus}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, leadStatus: e.target.value as CRMLeadStatus })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="New">New</option>
-                    <option value="Contacted">Contacted</option>
-                    <option value="Qualified">Qualified</option>
-                    <option value="Converted">Converted</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="edit-lead-assignee" className="block text-xs font-semibold text-[#64748B] mb-1">Assigned To</label>
-                  <select
-                    id="edit-lead-assignee"
-                    value={leadFormData.assignedToName}
-                    onChange={(e) => {
-                      const name = e.target.value;
-                      const initials = name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join('')
-                        .slice(0, 2)
-                        .toUpperCase();
-                      setLeadFormData({
-                        ...leadFormData,
-                        assignedToName: name,
-                        assignedToInitials: initials,
-                      });
-                    }}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Sara El Amrani">Sara El Amrani</option>
-                    <option value="Imane Benkirane">Imane Benkirane</option>
-                    <option value="Yassine Bouchra">Yassine Bouchra</option>
-                    <option value="Mehdi Zahraoui">Mehdi Zahraoui</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="edit-lead-contact" className="block text-xs font-semibold text-[#64748B] mb-1">Contact Method</label>
-                  <select
-                    id="edit-lead-contact"
-                    value={leadFormData.preferredContact}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, preferredContact: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                  >
-                    <option value="Email">Email</option>
-                    <option value="Phone">Phone</option>
-                    <option value="In-person">In-person</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="edit-lead-location" className="block text-xs font-semibold text-[#64748B] mb-1">Location</label>
-                  <input
-                    id="edit-lead-location"
-                    type="text"
-                    value={leadFormData.location}
-                    onChange={(e) => setLeadFormData({ ...leadFormData, location: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="edit-lead-followup" className="block text-xs font-semibold text-[#64748B] mb-1">Next Follow-Up</label>
-                <input
-                  id="edit-lead-followup"
-                  type="text"
-                  value={leadFormData.nextFollowUp}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, nextFollowUp: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="edit-lead-notes" className="block text-xs font-semibold text-[#64748B] mb-1">Internal Notes</label>
-                <textarea
-                  id="edit-lead-notes"
-                  rows={2}
-                  value={leadFormData.internalNotes}
-                  onChange={(e) => setLeadFormData({ ...leadFormData, internalNotes: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
+      {section === 'pipeline' && <section className="space-y-4 rounded-xl border bg-white p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-lg font-semibold">Sales pipeline</h2><p className="text-sm text-slate-500">Stage movement and funnel counts are saved by the CRM API.</p></div>
+          <select aria-label="Select pipeline" className={`${inputClass} max-w-xs`} value={pipelineId} onChange={(event) => setPipelineId(event.target.value)}>{pipelines.map((pipeline) => <option key={pipeline.id} value={pipeline.id}>{pipeline.name}{pipeline.is_default ? ' (default)' : ''}</option>)}</select>
+        </div>
+        {selectedPipeline && <>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-600">{selectedPipeline.description || 'No description'}</p>
+            <span className="flex gap-2"><button className={buttonClass} onClick={() => setForm({ type: 'pipeline', record: selectedPipeline })}>Edit pipeline</button>{!selectedPipeline.is_default && <button className={buttonClass} onClick={() => void remove('pipeline', () => crmService.deletePipeline(workspaceId, selectedPipeline.id))}>Delete pipeline</button>}</span>
           </div>
-        </div>
-      )}
-
-      {/* Add Activity Modal */}
-      {isAddActivityModalOpen && selectedLead && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="add-activity-modal-title">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 id="add-activity-modal-title" className="text-base font-bold text-[#1E1B4B]">Log Activity</h3>
-              <button
-                type="button"
-                onClick={() => setIsAddActivityModalOpen(false)}
-                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
-                aria-label="Close dialog"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddActivity} className="p-6 space-y-4">
-              <div>
-                <label htmlFor="activity-type" className="block text-xs font-semibold text-[#64748B] mb-1">Activity Type</label>
-                <select
-                  id="activity-type"
-                  value={activityForm.type}
-                  onChange={(e) => setActivityForm({ ...activityForm, type: e.target.value as any })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg bg-white focus:outline-none"
-                >
-                  <option value="call">Call</option>
-                  <option value="email">Email</option>
-                  <option value="meeting">Meeting</option>
-                  <option value="note">Internal Note</option>
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="activity-title" className="block text-xs font-semibold text-[#64748B] mb-1">Title *</label>
-                <input
-                  id="activity-title"
-                  type="text"
-                  value={activityForm.title}
-                  onChange={(e) => setActivityForm({ ...activityForm, title: e.target.value })}
-                  placeholder="e.g. Discovery Call with Operations Team"
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none focus:border-[#6D28D9]"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="activity-date" className="block text-xs font-semibold text-[#64748B] mb-1">Date & Time</label>
-                <input
-                  id="activity-date"
-                  type="text"
-                  value={activityForm.date}
-                  onChange={(e) => setActivityForm({ ...activityForm, date: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="activity-desc" className="block text-xs font-semibold text-[#64748B] mb-1">Description</label>
-                <textarea
-                  id="activity-desc"
-                  rows={3}
-                  value={activityForm.description}
-                  onChange={(e) => setActivityForm({ ...activityForm, description: e.target.value })}
-                  placeholder="Summary of conversation, questions raised, commitments made..."
-                  className="w-full px-3 py-2 text-xs border border-[#E2E8F0] rounded-lg focus:outline-none"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddActivityModalOpen(false)}
-                  className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold rounded-lg shadow-2xs"
-                >
-                  Log Activity
-                </button>
-              </div>
-            </form>
+          <div className="grid gap-4 overflow-x-auto pb-2 md:grid-cols-2 xl:grid-cols-5">
+            {[...selectedPipeline.stages].sort((a, b) => a.display_order - b.display_order).map((stage, index) => {
+              const stageLeads = leads.filter((lead) => lead.pipeline_id === selectedPipeline.id && lead.stage_id === stage.id);
+              return <article key={stage.id} className="min-w-56 rounded-lg border bg-slate-50 p-3">
+                <header className="mb-3 flex items-center justify-between gap-2">
+                  <div><h3 className="font-semibold">{stage.name} <span className="text-xs text-slate-500">({stageLeads.length})</span></h3><p className="text-xs text-slate-500">{stage.probability}% probability</p></div>
+                  <div className="flex gap-1"><button aria-label="Move stage up" className="rounded p-1 hover:bg-white" onClick={() => void reorder(index, -1)}>↑</button><button aria-label="Move stage down" className="rounded p-1 hover:bg-white" onClick={() => void reorder(index, 1)}>↓</button><button aria-label="Edit stage" className="rounded p-1 text-violet-700 hover:bg-white" onClick={() => setForm({ type: 'stage', pipelineId: selectedPipeline.id, record: stage })}>Edit</button></div>
+                </header>
+                {stageLeads.map((lead) => <article key={lead.id} className="mb-2 rounded-lg border bg-white p-3">
+                  <button className="text-left font-medium hover:text-violet-700" onClick={() => { setSection('leads'); setSelectedLeadId(lead.id); }}>{lead.name}</button>
+                  <p className="text-xs text-slate-500">{lead.company || lead.email || '—'}</p>
+                  <select aria-label={`Move ${lead.name} to stage`} className={`${inputClass} mt-2 bg-white`} value={lead.stage_id || ''} onChange={(event) => { const nextStage = selectedPipeline.stages.find((item) => item.id === event.target.value); if (nextStage) void moveStage(lead, nextStage); }}>
+                    {selectedPipeline.stages.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </article>)}
+                {stageLeads.length === 0 && <p className="py-3 text-center text-xs text-slate-500">No leads in this stage.</p>}
+              </article>;
+            })}
           </div>
-        </div>
-      )}
+          <button className={buttonClass} onClick={() => setForm({ type: 'stage', pipelineId: selectedPipeline.id })}>Add stage</button>
+        </>}
+        {!pipelines.length && <Empty text="No sales pipelines are available." />}
+      </section>}
 
-      {/* Import CSV Modal */}
-      {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="import-csv-modal-title">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            <div className="px-6 py-4 border-b border-[#E2E8F0] flex items-center justify-between">
-              <h3 id="import-csv-modal-title" className="text-base font-bold text-[#1E1B4B]">Import Leads from CSV</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsImportModalOpen(false);
-                  setCsvFile(null);
-                  setCsvPreviewRows([]);
-                  setCsvErrors([]);
-                }}
-                className="text-[#94A3B8] hover:text-[#1E1B4B] p-1 rounded"
-                aria-label="Close dialog"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="p-4 rounded-xl border-2 border-dashed border-[#DDD6FE] bg-[#FAF9FD] text-center">
-                <FileSpreadsheet className="w-8 h-8 text-[#6D28D9] mx-auto mb-2" />
-                <p className="text-xs font-medium text-[#1E1B4B]">
-                  Select or drag a CSV file with columns: <span className="font-bold">Name, Email, Company, Phone, Status</span>
-                </p>
-                <p className="text-[11px] text-[#64748B] mt-1">UTF-8 encoded .csv files up to 5MB</p>
-                <input
-                  ref={fileInputRef}
-                  id="crm-csv-file-input"
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="mt-3 px-4 py-2 bg-white border border-[#DDD6FE] text-[#6D28D9] hover:bg-[#F5F3FF] text-xs font-semibold rounded-lg shadow-2xs inline-flex items-center gap-2"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{csvFile ? csvFile.name : 'Choose CSV File'}</span>
-                </button>
-              </div>
-
-              {csvErrors.length > 0 && (
-                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs space-y-1" role="alert">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>Upload Issue</span>
-                  </div>
-                  {csvErrors.map((err, i) => (
-                    <div key={i}>{err}</div>
-                  ))}
-                </div>
-              )}
-
-              {csvPreviewRows.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-[#1E1B4B] mb-2 flex items-center justify-between">
-                    <span>File Preview ({csvPreviewRows.length} leads detected)</span>
-                    <span className="text-[11px] text-[#0D9488] font-normal">Ready to import</span>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto border border-[#E2E8F0] rounded-lg">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-[#FAF9FD] text-[11px] text-[#64748B] sticky top-0 border-b border-[#E2E8F0]">
-                        <tr>
-                          <th className="py-2 px-3">Name</th>
-                          <th className="py-2 px-3">Company</th>
-                          <th className="py-2 px-3">Email</th>
-                          <th className="py-2 px-3">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#F1F5F9]">
-                        {csvPreviewRows.slice(0, 10).map((row, i) => (
-                          <tr key={i} className="hover:bg-slate-50">
-                            <td className="py-1.5 px-3 font-medium text-[#1E1B4B]">{row.name}</td>
-                            <td className="py-1.5 px-3 text-[#64748B]">{row.company}</td>
-                            <td className="py-1.5 px-3 text-[#64748B]">{row.email}</td>
-                            <td className="py-1.5 px-3">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#EDE9FE] text-[#6D28D9]">
-                                {row.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-[#E2E8F0] flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsImportModalOpen(false);
-                    setCsvFile(null);
-                    setCsvPreviewRows([]);
-                    setCsvErrors([]);
-                  }}
-                  className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={csvPreviewRows.length === 0}
-                  onClick={handleConfirmImport}
-                  className="px-4 py-2 bg-[#6D28D9] hover:bg-[#5B21B6] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-2xs inline-flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Import {csvPreviewRows.length} Leads</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmId && (
-        <div className="fixed inset-0 z-50 bg-[#1E1B4B]/40 backdrop-blur-xs flex items-center justify-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-lead-modal-title" aria-describedby="delete-lead-modal-desc">
-          <div className="bg-white rounded-xl shadow-2xl border border-[#E2E8F0] w-full max-w-sm p-6 text-center animate-in fade-in zoom-in-95 duration-150">
-            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
-              <Trash2 className="w-6 h-6" />
-            </div>
-            <h4 id="delete-lead-modal-title" className="text-base font-bold text-[#1E1B4B]">Delete Contact?</h4>
-            <p id="delete-lead-modal-desc" className="text-xs text-[#64748B] mt-1.5">
-              This lead record and its associated activity history will be deleted.
-            </p>
-            <div className="mt-5 flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteConfirmId(null)}
-                className="px-4 py-2 text-xs font-medium text-[#64748B] hover:text-[#1E1B4B]"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDeleteLead(deleteConfirmId)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-2xs"
-              >
-                Delete Contact
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
+      {form && <EntityDialog
+        form={form}
+        pipelines={pipelines}
+        contacts={contacts}
+        saving={saving}
+        onClose={() => setForm(null)}
+        onSubmit={submitEntity}
+      />}
+      {profile && <ProfileDialog profile={profile} onClose={() => setProfile(null)} />}
+    </main>
   );
 };
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return <article className="rounded-xl border bg-white p-4"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold">{value}</p></article>;
+}
+
+function StatusPill({ status }: { status: string }) {
+  return <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800">{status}</span>;
+}
+
+function Empty({ text }: { text: string }) {
+  return <p className="rounded-lg border border-dashed p-8 text-center text-sm text-slate-500">{text}</p>;
+}
+
+function RecordSection({ title, search, setSearch, empty, emptyText, children }: {
+  title: string;
+  search: string;
+  setSearch: (value: string) => void;
+  empty: boolean;
+  emptyText: string;
+  children: React.ReactNode;
+}) {
+  return <section className="rounded-xl border bg-white p-4 sm:p-5">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{title}</h2><input aria-label={`Search ${title.toLowerCase()}`} className={`${inputClass} max-w-sm`} placeholder={`Search ${title.toLowerCase()}…`} value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+    {empty ? <Empty text={emptyText} /> : <div className="overflow-x-auto">{children}</div>}
+  </section>;
+}
+
+function LeadDetails({
+  lead, notes, activities, pipelines, detailError, noteText, setNoteText, activityForm, setActivityForm,
+  onEdit, onCreateNote, onSubmitActivity, onUpdateNote, onDeleteNote, onDeleteActivity,
+}: {
+  lead: CrmLead;
+  notes: CrmNote[];
+  activities: CrmActivity[];
+  pipelines: CrmPipeline[];
+  detailError: string;
+  noteText: string;
+  setNoteText: (value: string) => void;
+  activityForm: { type: string; title: string; description: string; activity_date: string };
+  setActivityForm: React.Dispatch<React.SetStateAction<{ type: string; title: string; description: string; activity_date: string }>>;
+  onEdit: () => void;
+  onCreateNote: (event: React.FormEvent) => void;
+  onSubmitActivity: (event: React.FormEvent) => void;
+  onUpdateNote: (note: CrmNote, content: string) => void;
+  onDeleteNote: (note: CrmNote) => void;
+  onDeleteActivity: (activity: CrmActivity) => void;
+}) {
+  const currentPipeline = pipelines.find((pipeline) => pipeline.id === lead.pipeline_id);
+  return <aside className="max-h-[75vh] space-y-4 overflow-y-auto rounded-xl border bg-white p-4">
+    <header className="flex items-start justify-between gap-2"><div><h2 className="text-lg font-bold">{lead.name}</h2><p className="text-sm text-slate-500">{lead.company || 'No company'}</p></div><button className="text-sm font-medium text-violet-700" onClick={onEdit}>Edit</button></header>
+    <div className="grid grid-cols-2 gap-2 text-sm"><Detail label="Email" value={lead.email} /><Detail label="Phone" value={lead.phone} /><Detail label="Source" value={lead.source} /><Detail label="Stage" value={lead.stage?.name || lead.status} /><Detail label="Owner" value={lead.assignedTo?.name} /><Detail label="Value" value={lead.estimated_value === null ? null : `${lead.currency} ${lead.estimated_value.toLocaleString()}`} /></div>
+    {lead.internalNotes && <p className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm">{lead.internalNotes}</p>}
+    {detailError && <p role="alert" className="text-sm text-red-700">{detailError}</p>}
+    <section><h3 className="mb-2 font-semibold">Notes</h3>
+      {notes.map((note) => <article key={note.id} className="mb-2 rounded-lg bg-amber-50 p-3 text-sm"><p className="whitespace-pre-wrap">{note.content}</p><p className="mt-1 text-xs text-slate-500">{note.user?.name || 'Team member'} · {new Date(note.created_at).toLocaleDateString()}</p><div className="mt-2 flex gap-3"><button className="text-violet-700" onClick={() => { const content = window.prompt('Edit note', note.content); if (content?.trim()) onUpdateNote(note, content.trim()); }}>Edit</button><button className="text-red-700" onClick={() => onDeleteNote(note)}>Delete</button></div></article>)}
+      <form onSubmit={onCreateNote} className="space-y-2"><textarea aria-label="New note" required maxLength={10000} value={noteText} onChange={(event) => setNoteText(event.target.value)} className={inputClass} placeholder="Write a note…" /><button className={buttonClass}>Add note</button></form>
+    </section>
+    <section><h3 className="mb-2 font-semibold">Activity history</h3>
+      {!activities.length && <p className="mb-2 text-sm text-slate-500">No activities recorded.</p>}
+      <div className="space-y-2">{activities.map((activity) => <article key={activity.id} className="rounded-lg border p-3 text-sm"><div className="flex justify-between gap-2"><strong>{activity.title}</strong><span className="text-xs text-slate-500">{new Date(activity.activity_date).toLocaleString()}</span></div><p className="text-xs capitalize text-violet-700">{activity.type.replace('_', ' ')}{activity.user?.name ? ` · ${activity.user.name}` : ''}</p>{activity.description && <p className="mt-1">{activity.description}</p>}{!['create', 'conversion', 'status_change'].includes(activity.type) && <button className="mt-1 text-xs text-red-700" onClick={() => onDeleteActivity(activity)}>Delete</button>}</article>)}</div>
+      <form onSubmit={onSubmitActivity} className="mt-3 space-y-2 rounded-lg bg-slate-50 p-3">
+        <h4 className="text-sm font-semibold">Record activity</h4>
+        <select aria-label="Activity type" className={inputClass} value={activityForm.type} onChange={(event) => setActivityForm({ ...activityForm, type: event.target.value })}>{activityTypes.map((type) => <option key={type}>{type}</option>)}</select>
+        <input aria-label="Activity title" required maxLength={255} className={inputClass} placeholder="Title" value={activityForm.title} onChange={(event) => setActivityForm({ ...activityForm, title: event.target.value })} />
+        <textarea aria-label="Activity description" maxLength={5000} className={inputClass} placeholder="Description" value={activityForm.description} onChange={(event) => setActivityForm({ ...activityForm, description: event.target.value })} />
+        <input aria-label="Activity date" type="datetime-local" className={inputClass} value={activityForm.activity_date} onChange={(event) => setActivityForm({ ...activityForm, activity_date: event.target.value })} />
+        <button className={buttonClass}>Save activity</button>
+      </form>
+    </section>
+    {currentPipeline && <p className="text-xs text-slate-500">Pipeline: {currentPipeline.name}</p>}
+  </aside>;
+}
+
+function Detail({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return <div><p className="text-xs text-slate-500">{label}</p><p className="break-words">{value || '—'}</p></div>;
+}
+
+function EntityDialog({ form, pipelines, contacts, saving, onClose, onSubmit }: {
+  form: EntityForm;
+  pipelines: CrmPipeline[];
+  contacts: CrmContact[];
+  saving: boolean;
+  onClose: () => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  const title = form.type === 'stage' ? (form.record ? 'Edit stage' : 'Add stage') : `${form.record ? 'Edit' : 'Create'} ${form.type}`;
+  const pipeline = form.type === 'stage' ? pipelines.find((item) => item.id === form.pipelineId) : undefined;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+    <section role="dialog" aria-modal="true" aria-label={title} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+      <header className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">{title}</h2><button aria-label="Close" className="rounded px-2 py-1 hover:bg-slate-100" onClick={onClose}>×</button></header>
+      <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-2">
+        {form.type === 'lead' && <LeadForm record={form.record} pipelines={pipelines} />}
+        {form.type === 'contact' && <ContactForm record={form.record} />}
+        {form.type === 'customer' && <CustomerForm record={form.record} contacts={contacts} />}
+        {form.type === 'pipeline' && <PipelineForm record={form.record} />}
+        {form.type === 'stage' && <StageForm record={form.record} pipeline={pipeline} />}
+        <div className="col-span-full flex justify-end gap-2 pt-2"><button type="button" className={buttonClass} onClick={onClose}>Cancel</button><button disabled={saving} className={primaryClass}>{saving ? 'Saving…' : 'Save'}</button></div>
+      </form>
+    </section>
+  </div>;
+}
+
+function Field({ label, name, defaultValue, type = 'text', required = false, maxLength, options, className }: {
+  label: string;
+  name: string;
+  defaultValue?: string | number | null;
+  type?: string;
+  required?: boolean;
+  maxLength?: number;
+  options?: Array<string | { value: string; label: string }>;
+  className?: string;
+}) {
+  const common = { id: name, name, required, className: className || inputClass, defaultValue: defaultValue ?? '', maxLength };
+  return <label htmlFor={name} className="block space-y-1 text-sm font-medium text-slate-700">{label}
+    {options ? <select {...common}><option value="">—</option>{options.map((option) => typeof option === 'string'
+      ? <option key={option} value={option}>{option}</option>
+      : <option key={option.value} value={option.value}>{option.label}</option>)}</select> : type === 'textarea' ? <textarea {...common} rows={3} /> : <input {...common} type={type} />}
+  </label>;
+}
+
+function LeadForm({ record, pipelines }: { record?: CrmLead; pipelines: CrmPipeline[] }) {
+  const activePipelineId = record?.pipeline_id || pipelines.find((pipeline) => pipeline.is_default)?.id || pipelines[0]?.id || '';
+  const [selectedPipelineId, setSelectedPipelineId] = useState(activePipelineId);
+  const pipeline = pipelines.find((item) => item.id === selectedPipelineId);
+  return <>
+    <Field label="Name" name="name" required defaultValue={record?.name} maxLength={255} />
+    <Field label="Company" name="company" defaultValue={record?.company} maxLength={255} />
+    <Field label="Email" name="email" type="email" defaultValue={record?.email} maxLength={255} />
+    <Field label="Phone" name="phone" defaultValue={record?.phone} maxLength={50} />
+    <Field label="Status" name="status" defaultValue={record?.status || 'New'} options={leadStatuses} />
+    <Field label="Source" name="source" defaultValue={record?.source} maxLength={100} />
+    <label className="block space-y-1 text-sm font-medium text-slate-700">Pipeline
+      <select name="pipeline_id" className={inputClass} value={selectedPipelineId} onChange={(event) => setSelectedPipelineId(event.target.value)}>
+        <option value="">Default pipeline</option>{pipelines.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select>
+    </label>
+    <Field label="Stage" name="stage_id" defaultValue={record?.stage_id} options={pipeline?.stages.slice().sort((a, b) => a.display_order - b.display_order).map((stage) => ({ value: stage.id, label: stage.name }))} />
+    <Field label="Campaign UUID (optional)" name="source_campaign_id" defaultValue={record?.source_campaign_id} />
+    <Field label="Project UUID (optional)" name="related_project_id" defaultValue={record?.related_project_id} />
+    <Field label="Estimated value" name="estimated_value" type="number" defaultValue={record?.estimated_value} />
+    <Field label="Currency" name="currency" defaultValue={record?.currency || 'USD'} maxLength={3} />
+    <Field label="Workspace member owner ID (optional)" name="owner_id" type="number" defaultValue={record?.assignedTo?.id} />
+    <Field label="Preferred contact" name="preferred_contact" defaultValue={record?.preferredContact} maxLength={50} />
+    <Field label="Location" name="location" defaultValue={record?.location} maxLength={255} />
+    <Field label="Next follow-up" name="next_follow_up_at" type="datetime-local" defaultValue={dateTimeLocal(record?.next_follow_up_at)} />
+    <Field label="Internal notes" name="internal_notes" type="textarea" defaultValue={record?.internalNotes} maxLength={10000} className={`${inputClass} sm:col-span-2`} />
+  </>;
+}
+
+function ContactForm({ record }: { record?: CrmContact }) {
+  return <>
+    <Field label="First name" name="first_name" required defaultValue={record?.first_name} maxLength={255} />
+    <Field label="Last name" name="last_name" defaultValue={record?.last_name} maxLength={255} />
+    <Field label="Company" name="company_name" defaultValue={record?.company_name} maxLength={255} />
+    <Field label="Email" name="email" type="email" defaultValue={record?.email} maxLength={255} />
+    <Field label="Phone" name="phone" defaultValue={record?.phone} maxLength={50} />
+    <Field label="Job title" name="job_title" defaultValue={record?.job_title} maxLength={255} />
+    <Field label="Lifecycle" name="lifecycle_stage" defaultValue={record?.lifecycle_stage || 'lead'} options={['lead', 'customer', 'partner', 'other']} />
+    <Field label="Status" name="status" defaultValue={record?.status || 'Active'} options={['Active', 'Inactive', 'Archived']} />
+    <Field label="Owner member ID (optional)" name="owner_id" type="number" defaultValue={record?.owner_id} />
+    <Field label="Preferred contact" name="preferred_contact" defaultValue={record?.preferred_contact} maxLength={50} />
+    <Field label="Location" name="location" defaultValue={record?.location} maxLength={255} />
+    <Field label="Notes" name="notes" type="textarea" defaultValue={record?.notes} maxLength={10000} className={`${inputClass} sm:col-span-2`} />
+  </>;
+}
+
+function CustomerForm({ record, contacts }: { record?: CrmCustomer; contacts: CrmContact[] }) {
+  return <>
+    <Field label="Company name" name="company_name" required defaultValue={record?.company_name} maxLength={255} />
+    <Field label="Contact name" name="contact_name" required defaultValue={record?.contact_name} maxLength={255} />
+    <Field label="Email" name="email" type="email" defaultValue={record?.email} maxLength={255} />
+    <Field label="Phone" name="phone" defaultValue={record?.phone} maxLength={50} />
+    <Field label="Status" name="status" defaultValue={record?.status || 'Active'} options={['Active', 'Churned', 'On Hold']} />
+    <Field label="Tier" name="customer_tier" defaultValue={record?.customer_tier || 'Standard'} options={['Standard', 'Premium', 'Enterprise']} />
+    <Field label="Total revenue" name="total_revenue" type="number" defaultValue={record?.total_revenue || 0} />
+    <Field label="Currency" name="currency" defaultValue={record?.currency || 'USD'} maxLength={3} />
+    <Field label="Linked contact" name="contact_id" defaultValue={record?.contact_id} options={contacts.map((contact) => ({ value: contact.id, label: contact.name }))} />
+    <Field label="Owner member ID (optional)" name="owner_id" type="number" defaultValue={record?.owner_id} />
+    <Field label="Notes" name="notes" type="textarea" defaultValue={record?.notes} maxLength={10000} className={`${inputClass} sm:col-span-2`} />
+  </>;
+}
+
+function PipelineForm({ record }: { record?: CrmPipeline }) {
+  return <>
+    <Field label="Name" name="name" required defaultValue={record?.name} maxLength={255} />
+    <Field label="Slug" name="slug" defaultValue={record?.slug} maxLength={255} />
+    <Field label="Display order" name="display_order" type="number" defaultValue={record?.display_order || 1} />
+    <Field label="Description" name="description" type="textarea" defaultValue={record?.description} maxLength={1000} className={`${inputClass} sm:col-span-2`} />
+  </>;
+}
+
+function StageForm({ record, pipeline }: { record?: CrmStage; pipeline?: CrmPipeline }) {
+  return <>
+    <p className="sm:col-span-2 text-sm text-slate-500">Pipeline: {pipeline?.name || 'Selected pipeline'}</p>
+    <Field label="Stage name" name="name" required defaultValue={record?.name} maxLength={255} />
+    <Field label="Code" name="code" defaultValue={record?.code} maxLength={50} />
+    <Field label="Color" name="color" defaultValue={record?.color} maxLength={50} />
+    <Field label="Probability (0–100)" name="probability" type="number" defaultValue={record?.probability ?? 0} />
+    <Field label="Display order" name="display_order" type="number" defaultValue={record?.display_order ?? (pipeline?.stages.length || 0) + 1} />
+    <label className="flex items-center gap-2 text-sm"><input name="is_won" type="checkbox" defaultChecked={record?.is_won} /> Won stage</label>
+    <label className="flex items-center gap-2 text-sm"><input name="is_lost" type="checkbox" defaultChecked={record?.is_lost} /> Lost stage</label>
+  </>;
+}
+
+function ProfileDialog({ profile, onClose }: { profile: ProfileView; onClose: () => void }) {
+  const title = profile.kind === 'contact' ? 'Contact profile' : 'Customer profile';
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+    <section role="dialog" aria-modal="true" aria-label={title} className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+      <header className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">{title}</h2><button aria-label="Close" className="rounded px-2 py-1 hover:bg-slate-100" onClick={onClose}>×</button></header>
+      {profile.loading && <p role="status" className="text-sm text-slate-500">Loading profile…</p>}
+      {profile.error && <p role="alert" className="text-sm text-red-700">{profile.error}</p>}
+      {profile.kind === 'contact' && profile.record && <div className="grid grid-cols-2 gap-3 text-sm">
+        <Detail label="Name" value={profile.record.name} />
+        <Detail label="Company" value={profile.record.company_name} />
+        <Detail label="Job title" value={profile.record.job_title} />
+        <Detail label="Email" value={profile.record.email} />
+        <Detail label="Phone" value={profile.record.phone} />
+        <Detail label="Preferred contact" value={profile.record.preferred_contact} />
+        <Detail label="Location" value={profile.record.location} />
+        <Detail label="Lifecycle" value={profile.record.lifecycle_stage} />
+        <Detail label="Status" value={profile.record.status} />
+        <Detail label="Owner" value={profile.record.owner?.name} />
+        <div className="col-span-2"><Detail label="Notes" value={profile.record.notes} /></div>
+      </div>}
+      {profile.kind === 'customer' && profile.record && <div className="grid grid-cols-2 gap-3 text-sm">
+        <Detail label="Company" value={profile.record.company_name} />
+        <Detail label="Contact" value={profile.record.contact_name} />
+        <Detail label="Email" value={profile.record.email} />
+        <Detail label="Phone" value={profile.record.phone} />
+        <Detail label="Status" value={profile.record.status} />
+        <Detail label="Tier" value={profile.record.customer_tier} />
+        <Detail label="Revenue" value={`${profile.record.currency} ${profile.record.total_revenue.toLocaleString()}`} />
+        <Detail label="Owner" value={profile.record.owner?.name} />
+        <Detail label="Linked contact" value={profile.record.contact_id} />
+        <Detail label="Converted from lead" value={profile.record.lead_id} />
+        <div className="col-span-2"><Detail label="Notes" value={profile.record.notes} /></div>
+      </div>}
+    </section>
+  </div>;
+}
