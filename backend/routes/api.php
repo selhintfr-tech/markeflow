@@ -36,3 +36,7 @@ require base_path('routes/calendar.php');
 require base_path('routes/audiences.php');
 require base_path('routes/strategies.php');
 require base_path('routes/research.php');
+
+Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])->group(function (): void {
+    require base_path('routes/crm.php');
+});
