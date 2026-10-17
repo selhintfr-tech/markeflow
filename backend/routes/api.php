@@ -33,3 +33,6 @@ Route::middleware(['web', 'auth'])->group(function () {
 
 require base_path('routes/finance.php');
 require base_path('routes/calendar.php');
+require base_path('routes/audiences.php');
+require base_path('routes/strategies.php');
+require base_path('routes/research.php');
