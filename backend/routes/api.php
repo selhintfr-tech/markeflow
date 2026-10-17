@@ -30,3 +30,6 @@ Route::middleware(['web', 'auth'])->group(function () {
         Route::apiResource('tasks', TaskController::class);
     });
 });
+
+require base_path('routes/finance.php');
+require base_path('routes/calendar.php');
