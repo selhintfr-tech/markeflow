@@ -11,6 +11,7 @@ import {
   Calendar,
   CheckSquare,
   UserCheck,
+  ShoppingBag,
   CreditCard,
   Percent,
   BarChart3,
@@ -62,6 +63,7 @@ const navSections: NavSection[] = [
     title: 'Customers',
     items: [
       { label: 'CRM & Leads', to: '/crm', icon: UserCheck },
+      { label: 'Sales & Orders', to: '/sales/orders', icon: ShoppingBag },
     ],
   },
   {

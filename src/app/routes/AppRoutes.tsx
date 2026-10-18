@@ -51,6 +51,9 @@ const ProfitabilityPage = lazy(() =>
 const CrmLeadsPage = lazy(() =>
   import('../../features/crm/CrmLeadsPage').then((m) => ({ default: m.CrmLeadsPage }))
 );
+const SalesOrdersPage = lazy(() =>
+  import('../../features/sales/SalesOrdersPage').then((m) => ({ default: m.SalesOrdersPage }))
+);
 const WorkspacesPage = lazy(() =>
   import('../../features/workspaces/WorkspacesPage').then((m) => ({ default: m.WorkspacesPage }))
 );
@@ -132,6 +135,7 @@ export const AppRoutes: React.FC = () => {
           {/* Customer Routes */}
           <Route path="/crm" element={<CrmLeadsPage />} />
           <Route path="/crm-leads" element={<CrmLeadsPage />} />
+          <Route path="/sales/orders" element={<SalesOrdersPage />} />
 
           {/* Finance & Insights Routes */}
           <Route path="/finance/budget" element={<BudgetExpensesPage />} />
