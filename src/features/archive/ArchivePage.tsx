@@ -1,309 +1,175 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Info, CheckCircle2, RotateCcw, X } from 'lucide-react';
-import { initialArchivedRecords } from '../../data/mock';
-import type { ArchivedRecord, ArchiveCategory } from '../../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, Info, X } from 'lucide-react';
+import { useWorkspace } from '../../context/WorkspaceContext';
+import { archiveService, type ArchiveRecord } from './archiveService';
+import type { ArchiveCategory } from '../../types';
 import { ArchiveCategoryTabs } from './components/ArchiveCategoryTabs';
 import { ArchiveFilters } from './components/ArchiveFilters';
 import { ArchiveTable } from './components/ArchiveTable';
 import { RestoreConfirmationModal } from './components/RestoreConfirmationModal';
 import { ArchiveDetailsModal } from './components/ArchiveDetailsModal';
 
-const ARCHIVE_STORAGE_KEY = 'marketflow_archived_records_v1';
-
-const getInitialArchivedRecords = (): ArchivedRecord[] => {
-  try {
-    const stored = localStorage.getItem(ARCHIVE_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    }
-  } catch (err) {
-    console.warn('Unable to retrieve archived records from localStorage:', err);
-  }
-  return initialArchivedRecords;
-};
+function dateFilters(range: string): { from?: string; to?: string } {
+  const year = /^Year (\d{4})$/.exec(range)?.[1];
+  return year ? { from: `${year}-01-01`, to: `${year}-12-31` } : {};
+}
 
 export const ArchivePage: React.FC = () => {
-  // Master archive records in frontend state with persistence
-  const [records, setRecords] = useState<ArchivedRecord[]>(getInitialArchivedRecords);
-
-  // Synchronize records with localStorage on modification
-  useEffect(() => {
-    try {
-      localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(records));
-    } catch (err) {
-      console.warn('Unable to persist archived records to localStorage:', err);
-    }
-  }, [records]);
-
-  // Active Category Tab: starts as 'Campaigns' matching initial view
+  const { currentWorkspace, hasWorkspace } = useWorkspace();
+  const workspaceId = currentWorkspace.id;
+  const [records, setRecords] = useState<ArchiveRecord[]>([]);
+  const [recordsWorkspaceId, setRecordsWorkspaceId] = useState('');
   const [activeTab, setActiveTab] = useState<ArchiveCategory>('Campaigns');
-  // Flag to know if tab was clicked by user to strictly filter by tab category
   const [isTabFilterApplied, setIsTabFilterApplied] = useState(false);
-
-  // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedWorkspace, setSelectedWorkspace] = useState('all');
   const [selectedRecordType, setSelectedRecordType] = useState('all');
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [selectedDateRange, setSelectedDateRange] = useState('01 Jan 2024 - 31 Oct 2026');
-
-  // Modals state
-  const [selectedRecordForRestore, setSelectedRecordForRestore] = useState<ArchivedRecord | null>(null);
+  const [selectedDateRange, setSelectedDateRange] = useState('All Time');
+  const [selectedRecordForRestore, setSelectedRecordForRestore] = useState<ArchiveRecord | null>(null);
+  const [selectedRecordForDetails, setSelectedRecordForDetails] = useState<ArchiveRecord | null>(null);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
-  const [selectedRecordForDetails, setSelectedRecordForDetails] = useState<ArchivedRecord | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [error, setError] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const workspaceVersion = useRef(0);
 
-  // Feedback Notification Toast
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const version = ++workspaceVersion.current;
+    let active = true;
+    setRestoring(false);
+    setIsRestoreModalOpen(false);
+    setIsDetailsModalOpen(false);
+    setSelectedRecordForRestore(null);
+    setSelectedRecordForDetails(null);
+    if (!workspaceId || !hasWorkspace) {
+      setRecords([]);
+      setRecordsWorkspaceId('');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError('');
+    const type = selectedRecordType === 'Project' || selectedRecordType === 'Campaign'
+      ? selectedRecordType
+      : isTabFilterApplied && (activeTab === 'Projects' || activeTab === 'Campaigns')
+        ? activeTab === 'Projects' ? 'Project' : 'Campaign'
+        : undefined;
+    archiveService.list(workspaceId, {
+      search: searchQuery.trim() || undefined,
+      type,
+      status: selectedStatus === 'all' ? undefined : selectedStatus,
+      ...dateFilters(selectedDateRange),
+    }).then((result) => {
+      if (active && version === workspaceVersion.current) {
+        setRecords(result);
+        setRecordsWorkspaceId(workspaceId);
+      }
+    }).catch((cause: unknown) => {
+      if (!active || version !== workspaceVersion.current) return;
+      setError(cause instanceof Error ? cause.message : 'Unable to load archived records.');
+      setRecords([]);
+    }).finally(() => {
+      if (active && version === workspaceVersion.current) setLoading(false);
+    });
+    return () => { active = false; };
+  }, [workspaceId, hasWorkspace, selectedRecordType, activeTab, isTabFilterApplied, searchQuery, selectedStatus, selectedDateRange]);
 
-  // Handle Tab Click
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timeout = window.setTimeout(() => setToastMessage(''), 4500);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
+
+  const filteredRecords = useMemo(() => (hasWorkspace && recordsWorkspaceId === workspaceId ? records : []).filter((record) => {
+    if (isTabFilterApplied && selectedRecordType === 'all' && record.category !== activeTab) return false;
+    return true;
+  }), [records, recordsWorkspaceId, workspaceId, hasWorkspace, isTabFilterApplied, selectedRecordType, activeTab]);
+
   const handleTabChange = (tab: ArchiveCategory) => {
     setActiveTab(tab);
     setIsTabFilterApplied(true);
-    // If user clicks a tab, also synchronize record type filter
-    if (tab === 'Projects') setSelectedRecordType('Project');
-    else if (tab === 'Campaigns') setSelectedRecordType('Campaign');
-    else if (tab === 'Reports') setSelectedRecordType('Report');
-    else if (tab === 'Files') setSelectedRecordType('File Bundle');
+    setSelectedRecordType(tab === 'Projects' ? 'Project' : tab === 'Campaigns' ? 'Campaign' : 'all');
   };
 
-  // Handle Record Type dropdown change
   const handleRecordTypeChange = (type: string) => {
     setSelectedRecordType(type);
-    if (type === 'all') {
-      setIsTabFilterApplied(false);
-    } else {
-      setIsTabFilterApplied(true);
-      if (type === 'Campaign') setActiveTab('Campaigns');
-      else if (type === 'Project') setActiveTab('Projects');
-      else if (type === 'Report') setActiveTab('Reports');
-      else if (type === 'File Bundle') setActiveTab('Files');
-    }
+    setIsTabFilterApplied(type !== 'all');
+    if (type === 'Project') setActiveTab('Projects');
+    if (type === 'Campaign') setActiveTab('Campaigns');
   };
 
-  // Filtered records
-  const filteredRecords = useMemo(() => {
-    return records.filter((record) => {
-      // 1. Search Query
-      if (searchQuery.trim()) {
-        const query = searchQuery.trim().toLowerCase();
-        const matchesName = record.name.toLowerCase().includes(query);
-        const matchesSubtitle = record.subtitle.toLowerCase().includes(query);
-        const matchesWorkspace = record.workspace.toLowerCase().includes(query);
-        const matchesBy = record.archivedBy.toLowerCase().includes(query);
-        const matchesType = record.type.toLowerCase().includes(query);
-        const matchesStatus = record.previousStatus.toLowerCase().includes(query);
-        const matchesDestination = record.destination.toLowerCase().includes(query);
-        if (
-          !matchesName &&
-          !matchesSubtitle &&
-          !matchesWorkspace &&
-          !matchesBy &&
-          !matchesType &&
-          !matchesStatus &&
-          !matchesDestination
-        ) {
-          return false;
-        }
-      }
-
-      // 2. Workspace Filter
-      if (selectedWorkspace !== 'all' && record.workspace !== selectedWorkspace) {
-        return false;
-      }
-
-      // 3. Status Filter
-      if (selectedStatus !== 'all' && record.previousStatus !== selectedStatus) {
-        return false;
-      }
-
-      // 4. Record Type Filter (dropdown takes precedence when not 'all')
-      if (selectedRecordType !== 'all') {
-        if (record.type !== selectedRecordType) return false;
-      } else if (isTabFilterApplied) {
-        // If tab was clicked explicitly and dropdown is 'all', filter by tab
-        if (record.category !== activeTab) return false;
-      }
-
-      // 5. Date Filter (support Year filters and range)
-      if (selectedDateRange === 'Year 2026' && !record.archivedDate.includes('2026')) {
-        return false;
-      }
-      if (selectedDateRange === 'Year 2025' && !record.archivedDate.includes('2025')) {
-        return false;
-      }
-      if (selectedDateRange === 'Year 2024' && !record.archivedDate.includes('2024')) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [
-    records,
-    searchQuery,
-    selectedWorkspace,
-    selectedStatus,
-    selectedRecordType,
-    isTabFilterApplied,
-    activeTab,
-    selectedDateRange,
-  ]);
-
-  // Handle Restore trigger
-  const handleTriggerRestore = (record: ArchivedRecord) => {
-    setSelectedRecordForRestore(record);
-    setIsRestoreModalOpen(true);
-  };
-
-  // Handle Restore Confirm
-  const handleConfirmRestore = (record: ArchivedRecord) => {
-    // Remove from archived records list (persisted via useEffect to localStorage)
-    setRecords((prev) => prev.filter((r) => r.id !== record.id));
-    setIsRestoreModalOpen(false);
-    setSelectedRecordForRestore(null);
-
-    // Show success notification
-    setToastMessage(`"${record.name}" has been restored to ${record.destination} successfully.`);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4500);
-  };
-
-  // Handle Details View
-  const handleViewDetails = (record: ArchivedRecord) => {
-    setSelectedRecordForDetails(record);
-    setIsDetailsModalOpen(true);
-  };
-
-  // Handle Clear Filters
   const handleClearFilters = () => {
     setSearchQuery('');
-    setSelectedWorkspace('all');
     setSelectedRecordType('all');
     setSelectedStatus('all');
-    setSelectedDateRange('01 Jan 2024 - 31 Oct 2026');
+    setSelectedDateRange('All Time');
     setIsTabFilterApplied(false);
   };
 
-  // Re-seed initial demo records
-  const handleResetArchiveData = () => {
-    setRecords(initialArchivedRecords);
-    handleClearFilters();
-    setToastMessage('Archive demo data reset to default records.');
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3000);
+  const handleConfirmRestore = async (record: ArchiveRecord) => {
+    if (!workspaceId) return;
+    const version = workspaceVersion.current;
+    setRestoring(true);
+    setError('');
+    try {
+      await archiveService.restore(workspaceId, record);
+      if (version !== workspaceVersion.current) return;
+      setIsRestoreModalOpen(false);
+      setSelectedRecordForRestore(null);
+      setIsDetailsModalOpen(false);
+      setSelectedRecordForDetails(null);
+      setToastMessage(`"${record.name}" was restored to ${record.destination}.`);
+      setRecords((previous) => previous.filter((item) => item.id !== record.id));
+    } catch (cause) {
+      if (version === workspaceVersion.current) setError(cause instanceof Error ? cause.message : 'Unable to restore this record.');
+    } finally {
+      if (version === workspaceVersion.current) setRestoring(false);
+    }
   };
 
-  return (
-    <div className="space-y-6 max-w-[1400px] mx-auto pb-12 animate-in fade-in duration-200">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-20 right-8 z-50 bg-[#065F46] text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-3 text-xs md:text-sm animate-in slide-in-from-top-4 duration-200">
-          <CheckCircle2 className="w-4 h-4 text-[#A7F3D0] shrink-0" />
-          <span>{toastMessage}</span>
-          <button
-            type="button"
-            onClick={() => setToastMessage(null)}
-            className="ml-2 text-white/80 hover:text-white p-0.5 rounded transition-colors"
-            aria-label="Dismiss notification"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-[#64748B]">
-        <span>System</span>
-        <span className="text-[#94A3B8]">/</span>
-        <span className="text-[#6D28D9] font-medium">Archive</span>
-      </div>
-
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl lg:text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
-            Archive
-          </h1>
-          <p className="text-sm text-[#64748B] mt-1">
-            Access historical marketing records without cluttering active workspaces.
-          </p>
-        </div>
-
-        {records.length !== initialArchivedRecords.length && (
-          <button
-            type="button"
-            onClick={handleResetArchiveData}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#6D28D9] bg-[#F5F3FF] border border-[#DDD6FE] rounded-lg hover:bg-[#EDE9FE] transition-colors"
-            title="Reset restored items back to initial archive for demo testing"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Demo Records</span>
-          </button>
-        )}
-      </div>
-
-      {/* Full-width Light-Blue Information Banner */}
-      <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-xl px-4 py-3 flex items-center gap-3">
-        <Info className="w-4 h-4 text-[#2563EB] shrink-0" />
-        <span className="text-xs md:text-sm text-[#1E40AF] font-medium">
-          Archived records remain available for reporting and historical comparison. Restoring returns them to active workspace boards.
-        </span>
-      </div>
-
-      {/* Category Tabs */}
-      <ArchiveCategoryTabs activeTab={activeTab} onTabChange={handleTabChange} />
-
-      {/* Filters Bar */}
-      <ArchiveFilters
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedWorkspace={selectedWorkspace}
-        onWorkspaceChange={setSelectedWorkspace}
-        selectedRecordType={selectedRecordType}
-        onRecordTypeChange={handleRecordTypeChange}
-        selectedStatus={selectedStatus}
-        onStatusChange={setSelectedStatus}
-        selectedDateRange={selectedDateRange}
-        onDateRangeChange={setSelectedDateRange}
-      />
-
-      {/* Archive Records Table */}
-      <ArchiveTable
-        records={filteredRecords}
-        onViewDetails={handleViewDetails}
-        onRestore={handleTriggerRestore}
-        onClearFilters={handleClearFilters}
-      />
-
-      {/* Restore Confirmation Modal */}
-      <RestoreConfirmationModal
-        isOpen={isRestoreModalOpen}
-        record={selectedRecordForRestore}
-        onClose={() => {
-          setIsRestoreModalOpen(false);
-          setSelectedRecordForRestore(null);
-        }}
-        onConfirm={handleConfirmRestore}
-      />
-
-      {/* Archive Details Modal */}
-      <ArchiveDetailsModal
-        isOpen={isDetailsModalOpen}
-        record={selectedRecordForDetails}
-        onClose={() => {
-          setIsDetailsModalOpen(false);
-          setSelectedRecordForDetails(null);
-        }}
-        onRestoreClick={(record) => {
-          setIsDetailsModalOpen(false);
-          handleTriggerRestore(record);
-        }}
-      />
-    </div>
-  );
+  return <div className="mx-auto max-w-[1400px] space-y-6 pb-12">
+    {toastMessage && <div role="status" className="fixed right-8 top-20 z-50 flex items-center gap-3 rounded-xl bg-[#065F46] px-4 py-3 text-sm text-white shadow-xl"><CheckCircle2 className="h-4 w-4 text-[#A7F3D0]" /><span>{toastMessage}</span><button type="button" onClick={() => setToastMessage('')} aria-label="Dismiss notification"><X className="h-4 w-4" /></button></div>}
+    <div className="flex items-center gap-2 text-xs text-[#64748B]"><span>System</span><span>/</span><span className="font-medium text-[#6D28D9]">Archive</span></div>
+    <header><h1 className="text-2xl font-extrabold tracking-tight text-[#1E1B4B] lg:text-3xl">Archive</h1><p className="mt-1 text-sm text-[#64748B]">Access archived projects and campaigns from the active workspace.</p></header>
+    <div className="flex items-center gap-3 rounded-xl border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3 text-sm font-medium text-[#1E40AF]"><Info className="h-4 w-4 shrink-0 text-[#2563EB]" />Archived projects and campaigns remain in your workspace database and can be restored.</div>
+    {!hasWorkspace && <p className="rounded-lg border bg-white p-4 text-sm text-[#64748B]">Select an active workspace to view its archive.</p>}
+    {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+    {loading && <p role="status" className="text-sm text-[#64748B]">Loading archived records…</p>}
+    <ArchiveCategoryTabs activeTab={activeTab} onTabChange={handleTabChange} />
+    <ArchiveFilters
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      selectedWorkspace={workspaceId}
+      workspaceName={currentWorkspace.name || 'Active workspace'}
+      onWorkspaceChange={() => undefined}
+      selectedRecordType={selectedRecordType}
+      onRecordTypeChange={handleRecordTypeChange}
+      selectedStatus={selectedStatus}
+      onStatusChange={setSelectedStatus}
+      selectedDateRange={selectedDateRange}
+      onDateRangeChange={setSelectedDateRange}
+    />
+    {!loading && activeTab !== 'Reports' && activeTab !== 'Files' && <ArchiveTable
+      records={filteredRecords}
+      onViewDetails={(record) => { setSelectedRecordForDetails(record); setIsDetailsModalOpen(true); }}
+      onRestore={(record) => { setSelectedRecordForRestore(record); setIsRestoreModalOpen(true); }}
+      onClearFilters={handleClearFilters}
+    />}
+    {!loading && (activeTab === 'Reports' || activeTab === 'Files') && <p className="rounded-xl border border-[#E2E8F0] bg-white p-8 text-center text-sm text-[#64748B]">{activeTab === 'Reports' ? 'Saved reports do not currently support archiving.' : 'File archive records are not available from the backend yet.'}</p>}
+    <RestoreConfirmationModal
+      isOpen={isRestoreModalOpen}
+      record={selectedRecordForRestore}
+      restoring={restoring}
+      onClose={() => { setIsRestoreModalOpen(false); setSelectedRecordForRestore(null); }}
+      onConfirm={(record) => void handleConfirmRestore(record)}
+    />
+    <ArchiveDetailsModal
+      isOpen={isDetailsModalOpen}
+      record={selectedRecordForDetails}
+      onClose={() => { setIsDetailsModalOpen(false); setSelectedRecordForDetails(null); }}
+      onRestoreClick={(record) => { setIsDetailsModalOpen(false); setSelectedRecordForRestore(record); setIsRestoreModalOpen(true); }}
+    />
+  </div>;
 };

@@ -8,20 +8,19 @@ import {
   MoreHorizontal,
   Megaphone,
   FolderKanban,
-  Files,
   ChevronLeft,
   ChevronRight,
   Copy,
   Download,
   Info,
 } from 'lucide-react';
-import type { ArchivedRecord } from '../../../types';
+import type { ArchiveRecord } from '../archiveService';
 import { ArchiveStatusBadge } from './ArchiveStatusBadge';
 
 interface ArchiveTableProps {
-  records: ArchivedRecord[];
-  onViewDetails: (record: ArchivedRecord) => void;
-  onRestore: (record: ArchivedRecord) => void;
+  records: ArchiveRecord[];
+  onViewDetails: (record: ArchiveRecord) => void;
+  onRestore: (record: ArchiveRecord) => void;
   onClearFilters?: () => void;
 }
 
@@ -113,17 +112,14 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
     setCurrentPage(1);
   };
 
-  const getRecordIcon = (type: ArchivedRecord['type']) => {
+  const getRecordIcon = (type: ArchiveRecord['type']) => {
     switch (type) {
       case 'Campaign':
         return <Megaphone className="w-4 h-4 stroke-[2.2]" />;
       case 'Project':
         return <FolderKanban className="w-4 h-4 stroke-[2.2]" />;
-      case 'Report':
-        return <FileText className="w-4 h-4 stroke-[2.2]" />;
-      case 'File Bundle':
       default:
-        return <Files className="w-4 h-4 stroke-[2.2]" />;
+        return <FileText className="w-4 h-4 stroke-[2.2]" />;
     }
   };
 
@@ -139,7 +135,7 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
     }, 1500);
   };
 
-  const handleExportMetadata = (record: ArchivedRecord, e: React.MouseEvent) => {
+  const handleExportMetadata = (record: ArchiveRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     setActiveMenuRecordId(null);
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(record, null, 2));

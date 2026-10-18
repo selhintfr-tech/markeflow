@@ -1,17 +1,19 @@
 import React, { useEffect } from 'react';
 import { RotateCcw, X } from 'lucide-react';
-import type { ArchivedRecord } from '../../../types';
+import type { ArchiveRecord } from '../archiveService';
 
 interface RestoreConfirmationModalProps {
   isOpen: boolean;
-  record: ArchivedRecord | null;
+  record: ArchiveRecord | null;
+  restoring?: boolean;
   onClose: () => void;
-  onConfirm: (record: ArchivedRecord) => void;
+  onConfirm: (record: ArchiveRecord) => void;
 }
 
 export const RestoreConfirmationModal: React.FC<RestoreConfirmationModalProps> = ({
   isOpen,
   record,
+  restoring = false,
   onClose,
   onConfirm,
 }) => {
@@ -45,6 +47,7 @@ export const RestoreConfirmationModal: React.FC<RestoreConfirmationModalProps> =
         <button
           type="button"
           onClick={onClose}
+          disabled={restoring}
           className="absolute top-5 right-5 text-[#94A3B8] hover:text-[#475569] p-1 rounded-lg hover:bg-slate-100 transition-colors"
           aria-label="Close dialog"
         >
@@ -76,6 +79,7 @@ export const RestoreConfirmationModal: React.FC<RestoreConfirmationModalProps> =
           <button
             type="button"
             onClick={onClose}
+            disabled={restoring}
             className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-sm font-medium text-[#475569] hover:bg-slate-50 transition-colors"
           >
             Cancel
@@ -83,9 +87,10 @@ export const RestoreConfirmationModal: React.FC<RestoreConfirmationModalProps> =
           <button
             type="button"
             onClick={() => onConfirm(record)}
-            className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-sm font-medium shadow-xs hover:shadow-md transition-all"
+            disabled={restoring}
+            className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-sm font-medium shadow-xs hover:shadow-md transition-all disabled:opacity-50"
           >
-            Restore record
+            {restoring ? 'Restoring…' : 'Restore record'}
           </button>
         </div>
       </div>

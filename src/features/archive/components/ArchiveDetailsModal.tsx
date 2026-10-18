@@ -1,13 +1,13 @@
 import React, { useEffect } from 'react';
 import { X, Calendar, User, Building2, Layers, RotateCcw, FileText } from 'lucide-react';
-import type { ArchivedRecord } from '../../../types';
+import type { ArchiveRecord } from '../archiveService';
 import { ArchiveStatusBadge } from './ArchiveStatusBadge';
 
 interface ArchiveDetailsModalProps {
   isOpen: boolean;
-  record: ArchivedRecord | null;
+  record: ArchiveRecord | null;
   onClose: () => void;
-  onRestoreClick: (record: ArchivedRecord) => void;
+  onRestoreClick: (record: ArchiveRecord) => void;
 }
 
 export const ArchiveDetailsModal: React.FC<ArchiveDetailsModalProps> = ({
