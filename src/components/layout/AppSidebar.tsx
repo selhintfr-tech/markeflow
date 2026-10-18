@@ -18,7 +18,9 @@ import {
   FileText,
   ArrowLeftRight,
   Archive,
+  Plug,
   Settings,
+  Truck,
   X,
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
@@ -80,7 +82,14 @@ const navSections: NavSection[] = [
     title: 'System',
     items: [
       { label: 'Archive', to: '/archive', icon: Archive },
+    ],
+  },
+  {
+    title: 'Settings / Integrations',
+    items: [
       { label: 'Settings', to: '/settings', icon: Settings },
+      { label: 'Meta Ads', to: '/integrations/meta', icon: Plug },
+      { label: 'Delivery Integrations', to: '/integrations/delivery', icon: Truck },
     ],
   },
 ];

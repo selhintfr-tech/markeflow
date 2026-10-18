@@ -63,6 +63,12 @@ const ArchivePage = lazy(() =>
 const MyProfilePage = lazy(() =>
   import('../../features/profile/MyProfilePage').then((m) => ({ default: m.MyProfilePage }))
 );
+const MetaAdsIntegrationPage = lazy(() =>
+  import('../../features/integrations/meta/MetaAdsIntegrationPage').then((m) => ({ default: m.MetaAdsIntegrationPage }))
+);
+const DeliveryIntegrationsPage = lazy(() =>
+  import('../../features/delivery/DeliveryIntegrationsPage').then((m) => ({ default: m.DeliveryIntegrationsPage }))
+);
 const ComparisonsPage = lazy(() =>
   import('../../features/comparisons/ComparisonsPage').then((m) => ({ default: m.ComparisonsPage }))
 );
@@ -149,6 +155,8 @@ export const AppRoutes: React.FC = () => {
           {/* System Routes */}
           <Route path="/archive" element={<ArchivePage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/integrations/meta" element={<MetaAdsIntegrationPage />} />
+          <Route path="/integrations/delivery" element={<DeliveryIntegrationsPage />} />
           <Route path="/settings/profile" element={<MyProfilePage />} />
           <Route path="/profile" element={<MyProfilePage />} />
 

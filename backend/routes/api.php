@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\CampaignController;
+use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\WorkspaceController;
@@ -22,6 +23,10 @@ Route::middleware('web')->group(function () {
 });
 
 Route::middleware(['web', 'auth'])->group(function () {
+    Route::get('/profile', [ProfileController::class, 'show']);
+    Route::patch('/profile', [ProfileController::class, 'update']);
+    Route::patch('/profile/password', [ProfileController::class, 'changePassword']);
+
     Route::apiResource('workspaces', WorkspaceController::class);
 
     Route::middleware(['tenant', 'tenant.required'])->group(function (): void {
