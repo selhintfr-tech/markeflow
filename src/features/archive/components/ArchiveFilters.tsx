@@ -1,11 +1,10 @@
 import React from 'react';
 import { Building2, Layers, Tag, Calendar, Search } from 'lucide-react';
-import { workspacesList } from '../../../data/mock';
-
 interface ArchiveFiltersProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   selectedWorkspace: string;
+  workspaceName: string;
   onWorkspaceChange: (ws: string) => void;
   selectedRecordType: string;
   onRecordTypeChange: (type: string) => void;
@@ -26,6 +25,7 @@ export const ArchiveFilters: React.FC<ArchiveFiltersProps> = ({
   onStatusChange,
   selectedDateRange,
   onDateRangeChange,
+  workspaceName,
 }) => {
   return (
     <div className="flex flex-wrap items-center gap-3 w-full">
@@ -37,14 +37,10 @@ export const ArchiveFilters: React.FC<ArchiveFiltersProps> = ({
         <select
           value={selectedWorkspace}
           onChange={(e) => onWorkspaceChange(e.target.value)}
+          disabled
           className="w-full appearance-none pl-8 pr-8 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs font-medium text-[#1E1B4B] hover:border-[#CBD5E1] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] focus:border-[#6D28D9] cursor-pointer shadow-2xs"
         >
-          <option value="all">All Workspaces</option>
-          {workspacesList.map((ws) => (
-            <option key={ws.id} value={ws.name}>
-              {ws.name}
-            </option>
-          ))}
+          <option value={selectedWorkspace}>{workspaceName}</option>
         </select>
         <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-[#94A3B8]">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -66,8 +62,6 @@ export const ArchiveFilters: React.FC<ArchiveFiltersProps> = ({
           <option value="all">All Record Types</option>
           <option value="Campaign">Campaign</option>
           <option value="Project">Project</option>
-          <option value="Report">Report</option>
-          <option value="File Bundle">File Bundle</option>
         </select>
         <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-[#94A3B8]">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,10 +81,10 @@ export const ArchiveFilters: React.FC<ArchiveFiltersProps> = ({
           className="w-full appearance-none pl-8 pr-8 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs font-medium text-[#1E1B4B] hover:border-[#CBD5E1] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] focus:border-[#6D28D9] cursor-pointer shadow-2xs"
         >
           <option value="all">All Statuses</option>
+          <option value="Active">Active</option>
+          <option value="Draft">Draft</option>
           <option value="Completed">Completed</option>
-          <option value="Archived">Archived</option>
-          <option value="On Hold">On Hold</option>
-          <option value="Final">Final</option>
+          <option value="Planned">Planned</option>
         </select>
         <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-[#94A3B8]">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,11 +103,10 @@ export const ArchiveFilters: React.FC<ArchiveFiltersProps> = ({
           onChange={(e) => onDateRangeChange(e.target.value)}
           className="w-full appearance-none pl-8 pr-8 py-2 bg-white border border-[#E2E8F0] rounded-lg text-xs font-medium text-[#1E1B4B] hover:border-[#CBD5E1] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] focus:border-[#6D28D9] cursor-pointer shadow-2xs"
         >
-          <option value="01 Jan 2024 - 31 Oct 2026">01 Jan 2024 - 31 Oct 2026</option>
+          <option value="All Time">All Time</option>
           <option value="Year 2026">Year 2026</option>
           <option value="Year 2025">Year 2025</option>
           <option value="Year 2024">Year 2024</option>
-          <option value="All Time">All Time</option>
         </select>
         <div className="absolute inset-y-0 right-0 pr-2.5 flex items-center pointer-events-none text-[#94A3B8]">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
