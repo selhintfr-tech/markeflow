@@ -44,3 +44,6 @@ require base_path('routes/analytics.php');
 require base_path('routes/reports.php');
 require base_path('routes/comparisons.php');
 require base_path('routes/sales.php');
+require base_path('routes/archive.php');
+require base_path('routes/meta.php');
+require base_path('routes/delivery.php');
