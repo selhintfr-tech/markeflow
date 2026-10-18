@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Calendar,
@@ -8,20 +8,172 @@ import {
   BarChart2,
   FileText,
   ChevronDown,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
+import { useWorkspace } from '../../context/WorkspaceContext';
 import { StatCard } from '../../components/ui/StatCard';
 import { MarketingPerformanceChart } from './components/MarketingPerformanceChart';
 import { BudgetUtilizationCard } from './components/BudgetUtilizationCard';
 import { ActiveCampaignsTable } from './components/ActiveCampaignsTable';
 import { UpcomingTasksCard } from './components/UpcomingTasksCard';
-import { dashboardStats } from '../../data/mock';
+import {
+  dashboardService,
+  getPeriodDateRange,
+  type AnalyticsOverview,
+  type AnalyticsTimeSeries,
+} from './dashboardService';
+import { campaignService, type CampaignRecord } from '../campaigns/campaignService';
+import { taskService, type TaskRecord } from '../tasks/taskService';
+
+const PERIOD_OPTIONS = [
+  'October 2026',
+  'September 2026',
+  'August 2026',
+  'Last 30 days',
+  'Year to date (2026)',
+  'All time',
+];
+
+const getPercentageChange = (
+  points: Array<{ date: string; value: number | string }> | null | undefined
+): number | null => {
+  if (!points || points.length < 2) return null;
+
+  const orderedPoints = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  const previous = Number(orderedPoints[orderedPoints.length - 2].value);
+  const current = Number(orderedPoints[orderedPoints.length - 1].value);
+  if (!Number.isFinite(previous) || !Number.isFinite(current) || previous === 0) return null;
+
+  return Math.round(((current - previous) / Math.abs(previous)) * 100);
+};
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [selectedPeriod, setSelectedPeriod] = useState('October 2026');
+  const { currentWorkspace } = useWorkspace();
+  const workspaceId = currentWorkspace?.id ?? '';
+  const workspaceName = currentWorkspace?.name ?? 'Workspace';
+
+  const [selectedPeriod, setSelectedPeriod] = useState<string>('October 2026');
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
 
-  const periods = ['October 2026', 'September 2026', 'August 2026', 'Year to date (2026)'];
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
+  const [timeSeries, setTimeSeries] = useState<AnalyticsTimeSeries | null>(null);
+  const [campaigns, setCampaigns] = useState<CampaignRecord[]>([]);
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Stale request protection
+  const activeWorkspaceIdRef = useRef(workspaceId);
+  activeWorkspaceIdRef.current = workspaceId;
+
+  const fetchDashboardData = useCallback(async () => {
+    if (!workspaceId) {
+      setOverview(null);
+      setTimeSeries(null);
+      setCampaigns([]);
+      setTasks([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const { from, to } = getPeriodDateRange(selectedPeriod);
+
+    try {
+      const [overviewData, timeSeriesData, campaignsData, tasksData] = await Promise.all([
+        dashboardService.getOverview(workspaceId, { from, to }),
+        dashboardService.getTimeSeries(workspaceId, { from, to }),
+        campaignService.list(workspaceId),
+        taskService.list(workspaceId),
+      ]);
+
+      // Guard against stale response if workspace changed while fetching
+      if (activeWorkspaceIdRef.current !== workspaceId) return;
+
+      setOverview(overviewData);
+      setTimeSeries(timeSeriesData);
+      setCampaigns(campaignsData);
+      setTasks(tasksData);
+    } catch (err) {
+      if (activeWorkspaceIdRef.current === workspaceId) {
+        setError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
+        setOverview(null);
+        setTimeSeries(null);
+        setCampaigns([]);
+        setTasks([]);
+      }
+    } finally {
+      if (activeWorkspaceIdRef.current === workspaceId) {
+        setLoading(false);
+      }
+    }
+  }, [workspaceId, selectedPeriod]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const handleToggleTask = async (taskId: string, currentStatus: string) => {
+    if (!workspaceId) return;
+    const newStatus = currentStatus === 'Completed' ? 'Pending' : 'Completed';
+    try {
+      await taskService.update(workspaceId, taskId, { status: newStatus as any });
+      // Optimistically update local tasks list
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus as any } : t))
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update task.');
+    }
+  };
+
+  // Derive top KPI metric values safely
+  const activeCampaignsCount = campaigns.filter((campaign) => campaign.status === 'Active').length;
+  const campaignChange = getPercentageChange(timeSeries?.series.campaigns);
+  const spendChange = getPercentageChange(timeSeries?.series.expenses);
+
+  const spendRaw =
+    overview?.campaign_financials?.spend !== undefined && overview?.campaign_financials?.spend !== null
+      ? Number(overview.campaign_financials.spend)
+      : overview?.finance?.expenses !== undefined && overview?.finance?.expenses !== null
+      ? Number(overview.finance.expenses)
+      : null;
+
+  const budgetRaw =
+    overview?.campaign_financials?.budget !== undefined && overview?.campaign_financials?.budget !== null
+      ? Number(overview.campaign_financials.budget)
+      : null;
+
+  const leadsRaw =
+    overview?.crm?.leads !== undefined && overview?.crm?.leads !== null
+      ? overview.crm.leads
+      : null;
+
+  const conversionRate = overview?.crm?.conversion_rate ?? 0;
+  const convertedLeads = overview?.crm?.converted_leads ?? 0;
+
+  // Profit calculation: campaign revenue - spend, or finance profit
+  let profitRaw: number | null = null;
+  if (
+    overview?.campaign_financials?.revenue !== undefined &&
+    overview?.campaign_financials?.revenue !== null &&
+    overview?.campaign_financials?.spend !== undefined &&
+    overview?.campaign_financials?.spend !== null
+  ) {
+    profitRaw = Math.round(
+      Number(overview.campaign_financials.revenue) - Number(overview.campaign_financials.spend)
+    );
+  } else if (overview?.finance?.profit !== undefined && overview?.finance?.profit !== null) {
+    profitRaw = Math.round(overview.finance.profit);
+  }
+
+  const returnOnSpend = overview?.campaign_financials?.return_on_spend ?? null;
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-12">
@@ -43,7 +195,7 @@ export const DashboardPage: React.FC = () => {
             Marketing Overview
           </h1>
           <p className="text-sm text-[#64748B] mt-1">
-            Track your performance, manage campaigns, and grow your business.
+            Real performance, campaign execution and financial metrics for <span className="font-semibold text-[#1E1B4B]">{workspaceName}</span>.
           </p>
         </div>
 
@@ -56,7 +208,7 @@ export const DashboardPage: React.FC = () => {
               aria-haspopup="listbox"
               aria-expanded={showPeriodDropdown}
               aria-label="Select reporting period"
-              className="flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] hover:bg-slate-50 shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] hover:bg-slate-50 shadow-2xs transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 cursor-pointer"
             >
               <Calendar className="w-3.5 h-3.5 text-[#64748B]" />
               <span>{selectedPeriod}</span>
@@ -68,7 +220,7 @@ export const DashboardPage: React.FC = () => {
                 role="listbox"
                 className="absolute right-0 mt-1.5 w-48 rounded-lg bg-white border border-[#E2E8F0] shadow-lg py-1 z-40"
               >
-                {periods.map((period) => (
+                {PERIOD_OPTIONS.map((period) => (
                   <button
                     key={period}
                     role="option"
@@ -77,7 +229,7 @@ export const DashboardPage: React.FC = () => {
                       setSelectedPeriod(period);
                       setShowPeriodDropdown(false);
                     }}
-                    className={`w-full text-left px-3.5 py-2 text-xs hover:bg-[#F5F3FF] transition-colors ${
+                    className={`w-full text-left px-3.5 py-2 text-xs hover:bg-[#F5F3FF] transition-colors cursor-pointer ${
                       selectedPeriod === period
                         ? 'text-[#6D28D9] font-semibold bg-[#F5F3FF]'
                         : 'text-[#1E1B4B]'
@@ -101,6 +253,24 @@ export const DashboardPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Error Banner with Retry */}
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 flex items-center justify-between text-xs text-rose-800">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={fetchDashboardData}
+            className="flex items-center gap-1.5 px-3 py-1 bg-white border border-rose-200 rounded-md font-semibold text-rose-700 hover:bg-rose-100 transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
 
       {/* Quick Action Navigation links */}
       <div className="flex flex-wrap items-center justify-start md:justify-end gap-4 sm:gap-6 text-xs font-semibold text-[#6D28D9]">
@@ -140,21 +310,43 @@ export const DashboardPage: React.FC = () => {
           icon={<Megaphone className="w-5 h-5 text-[#6D28D9]" />}
           iconBgColor="bg-[#F5F3FF]"
           title="Active Campaigns"
-          value={dashboardStats.activeCampaigns.value}
-          changePercentage={dashboardStats.activeCampaigns.changePercentage}
-          changeLabel={dashboardStats.activeCampaigns.changeLabel}
+          value={loading ? '...' : activeCampaignsCount}
+          changePercentage={campaignChange ?? 0}
+          changeLabel={campaignChange === null ? 'trend unavailable' : 'vs previous data point'}
+          onClick={() => navigate('/campaigns')}
         />
         <StatCard
           icon={<CreditCard className="w-5 h-5 text-[#6D28D9]" />}
           iconBgColor="bg-[#F5F3FF]"
           title="Advertising Spend"
-          value={`${dashboardStats.advertisingSpend.value.toLocaleString()} ${dashboardStats.advertisingSpend.currency}`}
-          changePercentage={dashboardStats.advertisingSpend.changePercentage}
-          changeLabel={dashboardStats.advertisingSpend.changeLabel}
+          value={
+            loading
+              ? '...'
+              : spendRaw !== null
+              ? `${spendRaw.toLocaleString()} MAD`
+              : '—'
+          }
+          changePercentage={spendChange ?? 0}
+          changeLabel={
+            spendChange === null
+              ? 'trend unavailable'
+              : budgetRaw
+              ? `of ${budgetRaw.toLocaleString()} MAD budget`
+              : 'vs previous data point'
+          }
+          onClick={() => navigate('/finance/budget')}
         />
         <StatCard
           icon={
-            <svg className="w-5 h-5 text-[#0D9488]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="w-5 h-5 text-[#0D9488]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
@@ -163,13 +355,26 @@ export const DashboardPage: React.FC = () => {
           }
           iconBgColor="bg-[#CCFBF1]/40"
           title="Leads Generated"
-          value={dashboardStats.leadsGenerated.value}
-          changePercentage={dashboardStats.leadsGenerated.changePercentage}
-          changeLabel={dashboardStats.leadsGenerated.changeLabel}
+          value={loading ? '...' : leadsRaw !== null ? leadsRaw : '—'}
+          changePercentage={conversionRate}
+          changeLabel={
+            conversionRate > 0
+              ? `conversion rate (${convertedLeads} converted)`
+              : 'leads in CRM'
+          }
+          onClick={() => navigate('/crm')}
         />
         <StatCard
           icon={
-            <svg className="w-5 h-5 text-[#0D9488]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              className="w-5 h-5 text-[#0D9488]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="12" y1="20" x2="12" y2="10" />
               <line x1="18" y1="20" x2="18" y2="4" />
               <line x1="6" y1="20" x2="6" y2="16" />
@@ -177,29 +382,48 @@ export const DashboardPage: React.FC = () => {
           }
           iconBgColor="bg-[#CCFBF1]/40"
           title="Estimated Campaign Profit"
-          value={`+${dashboardStats.estimatedProfit.value.toLocaleString()} ${dashboardStats.estimatedProfit.currency}`}
-          changePercentage={dashboardStats.estimatedProfit.changePercentage}
-          changeLabel={dashboardStats.estimatedProfit.changeLabel}
+          value={
+            loading
+              ? '...'
+              : profitRaw !== null
+              ? `${profitRaw >= 0 ? '+' : ''}${profitRaw.toLocaleString()} MAD`
+              : '—'
+          }
+          changePercentage={returnOnSpend ? Math.round(returnOnSpend * 100) : 0}
+          changeLabel={
+            returnOnSpend
+              ? `${returnOnSpend}x return on spend`
+              : 'recorded net profit'
+          }
+          onClick={() => navigate('/analytics')}
         />
       </div>
 
       {/* Middle Row: Marketing Performance (2/3 width) + Budget Utilization (1/3 width) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <MarketingPerformanceChart />
+          <MarketingPerformanceChart timeSeries={timeSeries} loading={loading} />
         </div>
         <div className="lg:col-span-1">
-          <BudgetUtilizationCard />
+          <BudgetUtilizationCard
+            overview={overview}
+            loading={loading}
+            selectedPeriod={selectedPeriod}
+          />
         </div>
       </div>
 
       {/* Bottom Row: Active Campaigns Table (2/3 width) + Upcoming Tasks (1/3 width) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <ActiveCampaignsTable />
+          <ActiveCampaignsTable campaigns={campaigns} loading={loading} />
         </div>
         <div className="lg:col-span-1">
-          <UpcomingTasksCard />
+          <UpcomingTasksCard
+            tasks={tasks}
+            loading={loading}
+            onToggleTask={handleToggleTask}
+          />
         </div>
       </div>
     </div>
