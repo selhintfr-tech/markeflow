@@ -6,7 +6,8 @@ interface PersonalInformationFormProps {
   initialUser: UserProfile;
   avatarPreview: string | null;
   onAvatarChange: (previewUrl: string | null) => void;
-  onSave: (updatedUser: UserProfile) => void;
+  onSave: (updatedUser: UserProfile) => Promise<void>;
+  isSaving: boolean;
 }
 
 export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = ({
@@ -14,12 +15,13 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
   avatarPreview,
   onAvatarChange,
   onSave,
+  isSaving,
 }) => {
   const [fullName, setFullName] = useState(initialUser.name);
   const [email, setEmail] = useState(initialUser.email);
-  const [phone, setPhone] = useState(initialUser.phone || '+212 6 61 24 88 31');
+  const [phone, setPhone] = useState(initialUser.phone || '');
   const [language, setLanguage] = useState(initialUser.language || 'English');
-  const [timezone, setTimezone] = useState(initialUser.timezone || 'Africa/Casablanca (UTC+01:00)');
+  const [timezone, setTimezone] = useState(initialUser.timezone || 'Africa/Casablanca');
   const [formError, setFormError] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -28,9 +30,9 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
   const handleReset = () => {
     setFullName(initialUser.name);
     setEmail(initialUser.email);
-    setPhone(initialUser.phone || '+212 6 61 24 88 31');
+    setPhone(initialUser.phone || '');
     setLanguage(initialUser.language || 'English');
-    setTimezone(initialUser.timezone || 'Africa/Casablanca (UTC+01:00)');
+    setTimezone(initialUser.timezone || 'Africa/Casablanca');
     onAvatarChange(null);
     setFormError(null);
     setUploadError(null);
@@ -94,7 +96,7 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
       avatarUrl: avatarPreview || initialUser.avatarUrl,
     };
 
-    onSave(updatedUser);
+    void onSave(updatedUser);
   };
 
   return (
@@ -192,16 +194,19 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
               onChange={(e) => setTimezone(e.target.value)}
               className="w-full appearance-none px-3.5 pr-8 py-2 rounded-lg border border-[#E2E8F0] bg-white text-sm text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] focus:border-[#6D28D9] cursor-pointer shadow-2xs"
             >
-              <option value="Africa/Casablanca (UTC+01:00)">
+              {!['Africa/Casablanca', 'Europe/Paris', 'Europe/London', 'America/New_York'].includes(timezone) && (
+                <option value={timezone}>{timezone}</option>
+              )}
+              <option value="Africa/Casablanca">
                 Africa/Casablanca (UTC+01:00)
               </option>
-              <option value="Europe/Paris (UTC+02:00)">
+              <option value="Europe/Paris">
                 Europe/Paris (UTC+02:00)
               </option>
-              <option value="Europe/London (UTC+01:00)">
+              <option value="Europe/London">
                 Europe/London (UTC+01:00)
               </option>
-              <option value="America/New_York (UTC-04:00)">
+              <option value="America/New_York">
                 America/New_York (UTC-04:00)
               </option>
               <option value="Asia/Dubai (UTC+04:00)">
@@ -273,6 +278,7 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
             <div className="text-xs text-[#64748B] space-y-0.5">
               <p>Upload a profile photo to personalize your account.</p>
               <p className="text-[11px] text-[#94A3B8]">JPG, PNG or GIF. Max size 5MB.</p>
+              <p className="text-[11px] text-[#94A3B8]">Photo upload is preview-only; the backend has no upload endpoint.</p>
               {avatarPreview && (
                 <button
                   type="button"
@@ -307,9 +313,10 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
           </button>
           <button
             type="submit"
+            disabled={isSaving}
             className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-sm font-medium shadow-xs hover:shadow-md transition-all"
           >
-            Save Profile
+            {isSaving ? 'Saving…' : 'Save Profile'}
           </button>
         </div>
       </form>

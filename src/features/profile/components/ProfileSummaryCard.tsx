@@ -34,16 +34,16 @@ export const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
         {/* User Metadata */}
         <div className="flex-1 min-w-0">
           <h2 className="text-xl font-bold text-[#1E1B4B] tracking-tight">{user.name}</h2>
-          <p className="text-sm text-[#64748B] mt-0.5">{user.role || 'Workspace Owner'}</p>
+          <p className="text-sm text-[#64748B] mt-0.5">{user.role || 'Workspace member'}</p>
 
           <div className="flex items-center gap-1.5 text-sm font-medium text-[#1E1B4B] mt-2">
             <Building2 className="w-4 h-4 text-[#94A3B8]" />
-            <span>{user.workspaceName || 'Atlas Retail SARL'}</span>
+            <span>{user.workspaceName || 'Workspace unavailable'}</span>
           </div>
 
-          <p className="text-xs text-[#64748B] mt-1.5">
-            Member since {user.memberSince || 'January 2024'} • Workspace Owner with full access
-          </p>
+          {user.memberSince && (
+            <p className="text-xs text-[#64748B] mt-1.5">Member since {user.memberSince}</p>
+          )}
         </div>
       </div>
 

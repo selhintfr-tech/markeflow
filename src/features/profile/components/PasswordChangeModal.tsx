@@ -4,17 +4,24 @@ import { X, Lock, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
 interface PasswordChangeModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSubmit: (payload: {
+    current_password: string;
+    new_password: string;
+    new_password_confirmation: string;
+  }) => Promise<void>;
 }
 
 export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
   isOpen,
   onClose,
+  onSubmit,
 }) => {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submittedFeedback, setSubmittedFeedback] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleModalClose = useCallback(() => {
     setError(null);
@@ -37,7 +44,7 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -54,10 +61,19 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
       return;
     }
 
-    // Honest demo feedback: actual password updates require backend auth service
-    setSubmittedFeedback(
-      'Demo Notice: Form validated successfully. In this frontend prototype, live credential changes will take effect once the backend authentication service is connected. No credentials were saved.'
-    );
+    setIsSubmitting(true);
+    try {
+      await onSubmit({
+        current_password: currentPassword,
+        new_password: newPassword,
+        new_password_confirmation: confirmPassword,
+      });
+      setSubmittedFeedback('Password updated successfully.');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Unable to update your password.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -96,8 +112,8 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
           <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
           <div>
-            <span className="font-semibold block">Authentication Service Pending</span>
-            This is a frontend prototype. Password changes will be wired to the secure authentication backend in the next phase.
+            <span className="font-semibold block">Password route unavailable</span>
+            The current production API routes do not register <code>/api/profile/password</code>.
           </div>
         </div>
 
@@ -173,9 +189,10 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
               </button>
               <button
                 type="submit"
+                disabled={isSubmitting}
                 className="px-4 py-1.5 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs transition-colors"
               >
-                Update Password
+                {isSubmitting ? 'Updating…' : 'Update Password'}
               </button>
             </div>
           </form>

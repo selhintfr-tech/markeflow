@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sliders,
@@ -22,9 +22,10 @@ import {
 import { useWorkspace } from '../../context/WorkspaceContext';
 import type { SettingsSection, AppSettingsState } from './types';
 import { loadStoredSettings, saveStoredSettings } from './settingsData';
+import { settingsService } from './settingsService';
 
 export const SettingsPage: React.FC = () => {
-  const { currentWorkspace } = useWorkspace();
+  const { currentWorkspace, updateWorkspace } = useWorkspace();
 
   // Active section tab
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
@@ -32,10 +33,55 @@ export const SettingsPage: React.FC = () => {
   // Stored state vs draft state
   const [savedSettings, setSavedSettings] = useState<AppSettingsState>(loadStoredSettings);
   const [draftSettings, setDraftSettings] = useState<AppSettingsState>(loadStoredSettings);
+  const [workspaceRequestId, setWorkspaceRequestId] = useState<string | null>(null);
+  const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const settingsLoading = Boolean(currentWorkspace.id && workspaceRequestId !== currentWorkspace.id);
+  const workspaceSettingsLoaded = Boolean(currentWorkspace.id && loadedWorkspaceId === currentWorkspace.id);
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!currentWorkspace.id) return () => {
+      isMounted = false;
+    };
+    settingsService.getWorkspace(currentWorkspace.id)
+      .then((workspace) => {
+        if (!isMounted) return;
+        const applyWorkspace = (settings: AppSettingsState): AppSettingsState => ({
+          ...settings,
+          general: {
+            ...settings.general,
+            timezone: workspace.timezone,
+            dateFormat: workspace.date_format,
+            currency: workspace.currency,
+          },
+          workspaceDisplay: {
+            ...settings.workspaceDisplay,
+            displayName: workspace.name,
+            industry: workspace.industry || '',
+          },
+        });
+        setSavedSettings(applyWorkspace);
+        setDraftSettings(applyWorkspace);
+        setLoadedWorkspaceId(currentWorkspace.id);
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setErrorMessage(error instanceof Error ? error.message : 'Unable to load workspace settings.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setWorkspaceRequestId(currentWorkspace.id);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentWorkspace.id]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -48,13 +94,41 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setErrorMessage(null), 4000);
   };
 
-  const handleSave = () => {
-    const success = saveStoredSettings(draftSettings);
-    if (success) {
+  const handleSave = async () => {
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      if (activeSection === 'workspace') {
+        if (!currentWorkspace.id) throw new Error('Select a workspace before saving workspace details.');
+        await updateWorkspace(currentWorkspace.id, {
+          name: draftSettings.workspaceDisplay.displayName.trim(),
+          industry: draftSettings.workspaceDisplay.industry.trim() || null,
+        });
+        setSavedSettings(draftSettings);
+        showToast('Workspace details saved.');
+        return;
+      }
+
+      if (activeSection === 'general') {
+        if (!currentWorkspace.id) throw new Error('Select a workspace before saving regional settings.');
+        await updateWorkspace(currentWorkspace.id, {
+          timezone: draftSettings.general.timezone,
+          date_format: draftSettings.general.dateFormat,
+          currency: draftSettings.general.currency,
+        });
+      }
+
+      if (!saveStoredSettings(draftSettings)) {
+        throw new Error('Could not save device-local preferences. Browser storage may be full or disabled.');
+      }
       setSavedSettings(draftSettings);
-      showToast('Settings saved successfully.');
-    } else {
-      showError('Failed to save settings. Local storage may be full or disabled.');
+      showToast(activeSection === 'general'
+        ? 'Workspace regional settings saved; language and reporting period saved on this device.'
+        : 'Preferences saved on this device.');
+    } catch (error) {
+      showError(error instanceof Error ? error.message : 'Unable to save these settings.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -122,6 +196,12 @@ export const SettingsPage: React.FC = () => {
         </p>
       </div>
 
+      {settingsLoading && (
+        <div role="status" className="rounded-xl border border-[#E2E8F0] bg-white px-4 py-3 text-sm text-[#64748B]">
+          Loading settings for the active workspace…
+        </div>
+      )}
+
       {/* Two-Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Vertical Navigation (4 cols) */}
@@ -172,7 +252,7 @@ export const SettingsPage: React.FC = () => {
               <div className="border-b border-[#F1F5F9] pb-4">
                 <h2 className="text-base font-bold text-[#1E1B4B]">General Settings</h2>
                 <p className="text-xs text-[#64748B] mt-0.5">
-                  Configure language, regional formatting, and default analytics period.
+                  Regional defaults are saved to the active workspace. Language and reporting period are saved on this device.
                 </p>
               </div>
 
@@ -213,6 +293,9 @@ export const SettingsPage: React.FC = () => {
                     }
                     className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   >
+                    {!['Africa/Casablanca', 'Europe/Paris', 'Europe/London', 'America/New_York'].includes(draftSettings.general.timezone) && (
+                      <option value={draftSettings.general.timezone}>{draftSettings.general.timezone}</option>
+                    )}
                     <option value="Africa/Casablanca">Africa/Casablanca (UTC+01:00)</option>
                     <option value="Europe/Paris">Europe/Paris (UTC+01:00)</option>
                     <option value="Europe/London">Europe/London (UTC+00:00)</option>
@@ -235,6 +318,9 @@ export const SettingsPage: React.FC = () => {
                     }
                     className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   >
+                    {!['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'].includes(draftSettings.general.dateFormat) && (
+                      <option value={draftSettings.general.dateFormat}>{draftSettings.general.dateFormat}</option>
+                    )}
                     <option value="DD/MM/YYYY">DD/MM/YYYY (e.g. 15/10/2026)</option>
                     <option value="MM/DD/YYYY">MM/DD/YYYY (e.g. 10/15/2026)</option>
                     <option value="YYYY-MM-DD">YYYY-MM-DD (e.g. 2026-10-15)</option>
@@ -256,6 +342,9 @@ export const SettingsPage: React.FC = () => {
                     }
                     className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                   >
+                    {!['MAD', 'EUR', 'USD'].includes(draftSettings.general.currency) && (
+                      <option value={draftSettings.general.currency}>{draftSettings.general.currency}</option>
+                    )}
                     <option value="MAD">MAD (Moroccan Dirham)</option>
                     <option value="EUR">EUR (€ Euro)</option>
                     <option value="USD">USD ($ US Dollar)</option>
@@ -285,6 +374,13 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
 
+              <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3.5 text-xs text-[#64748B] flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-[#6D28D9] shrink-0 mt-0.5" />
+                <p>
+                  Language and reporting period are saved on this device only. Language does not translate the application, and analytics pages do not yet consume the reporting-period preference.
+                </p>
+              </div>
+
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#F1F5F9]">
                 <button
@@ -297,9 +393,10 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving || settingsLoading || !workspaceSettingsLoaded}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
-                  Save Changes
+                  {isSaving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
             </div>
@@ -311,7 +408,7 @@ export const SettingsPage: React.FC = () => {
               <div className="border-b border-[#F1F5F9] pb-4">
                 <h2 className="text-base font-bold text-[#1E1B4B]">Workspace Settings</h2>
                 <p className="text-xs text-[#64748B] mt-0.5">
-                  Information for the active workspace loaded from workspace context.
+                  Workspace details load from and save to the authenticated workspace API.
                 </p>
               </div>
 
@@ -324,15 +421,15 @@ export const SettingsPage: React.FC = () => {
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold text-[#1E1B4B]">
-                        {currentWorkspace?.name || 'Atlas Retail SARL'}
+                        {currentWorkspace?.name || 'No workspace selected'}
                       </h3>
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#ECFDF5] text-[#059669]">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#059669]" />
-                        {currentWorkspace?.status || 'Active'}
+                        {currentWorkspace?.status || 'Unavailable'}
                       </span>
                     </div>
                     <p className="text-xs text-[#64748B] mt-0.5">
-                      ID: <span className="font-mono text-[#1E1B4B]">{currentWorkspace?.id || 'ws-atlas-retail'}</span> • {currentWorkspace?.location || 'Casablanca, Morocco'}
+                      ID: <span className="font-mono text-[#1E1B4B]">{currentWorkspace?.id || '—'}</span>{currentWorkspace?.location ? ` • ${currentWorkspace.location}` : ''}
                     </p>
                   </div>
                 </div>
@@ -355,7 +452,7 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block font-semibold text-[#1E1B4B] mb-1.5">
-                      Workspace Display Name
+                      Workspace Name
                     </label>
                     <input
                       type="text"
@@ -372,7 +469,7 @@ export const SettingsPage: React.FC = () => {
 
                   <div>
                     <label className="block font-semibold text-[#1E1B4B] mb-1.5">
-                      Industry Category
+                      Industry
                     </label>
                     <input
                       type="text"
@@ -394,14 +491,12 @@ export const SettingsPage: React.FC = () => {
                     <input
                       type="email"
                       value={draftSettings.workspaceDisplay.contactEmail}
-                      onChange={(e) =>
-                        setDraftSettings((prev) => ({
-                          ...prev,
-                          workspaceDisplay: { ...prev.workspaceDisplay, contactEmail: e.target.value },
-                        }))
-                      }
+                      disabled
                       className="w-full px-3 py-2 bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
                     />
+                    <p className="mt-1 text-[11px] text-[#64748B]">
+                      Workspace contact email is not supported by the current workspace API.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -429,9 +524,10 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving || settingsLoading || !workspaceSettingsLoaded}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
-                  Save Changes
+                  {isSaving ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
             </div>
@@ -451,7 +547,7 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-[#FAF5FF] border border-[#E9D5FF] rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-[#6D28D9]">
                 <Info className="w-4 h-4 shrink-0 text-[#6D28D9] mt-0.5" />
                 <p className="leading-relaxed">
-                  Preferences are stored in your application settings. External email relay and webhook dispatch services will be synchronized upon backend integration.
+                  These preferences are saved only in this browser. Notification dispatch and email delivery are not connected.
                 </p>
               </div>
 
@@ -632,9 +728,10 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving || settingsLoading}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
-                  Save Preferences
+                  {isSaving ? 'Saving…' : 'Save Preferences'}
                 </button>
               </div>
             </div>
@@ -657,7 +754,9 @@ export const SettingsPage: React.FC = () => {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* Light Theme */}
-                  <div
+                  <button
+                    type="button"
+                    aria-pressed={draftSettings.appearance.theme === 'light'}
                     onClick={() =>
                       setDraftSettings((prev) => ({
                         ...prev,
@@ -680,17 +779,14 @@ export const SettingsPage: React.FC = () => {
                     <p className="text-[11px] text-[#64748B] mt-0.5">
                       Clean high-contrast theme optimized for daily marketing work.
                     </p>
-                  </div>
+                  </button>
 
                   {/* Dark Theme */}
-                  <div
-                    onClick={() =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        appearance: { ...prev.appearance, theme: 'dark' },
-                      }))
-                    }
-                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  <button
+                    type="button"
+                    disabled
+                    aria-pressed={false}
+                    className={`p-4 rounded-xl border-2 cursor-not-allowed opacity-60 transition-all ${
                       draftSettings.appearance.theme === 'dark'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
@@ -706,17 +802,14 @@ export const SettingsPage: React.FC = () => {
                     <p className="text-[11px] text-[#64748B] mt-0.5">
                       Low-glare palette for dimly lit environments.
                     </p>
-                  </div>
+                  </button>
 
                   {/* System Theme */}
-                  <div
-                    onClick={() =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        appearance: { ...prev.appearance, theme: 'system' },
-                      }))
-                    }
-                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  <button
+                    type="button"
+                    disabled
+                    aria-pressed={false}
+                    className={`p-4 rounded-xl border-2 cursor-not-allowed opacity-60 transition-all ${
                       draftSettings.appearance.theme === 'system'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
@@ -729,7 +822,7 @@ export const SettingsPage: React.FC = () => {
                     <p className="text-[11px] text-[#64748B] mt-0.5">
                       Matches your operating system display preferences.
                     </p>
-                  </div>
+                  </button>
                 </div>
               </div>
 
@@ -737,7 +830,7 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3.5 text-xs text-[#64748B] flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-[#6D28D9] shrink-0 mt-0.5" />
                 <p>
-                  MarketFlow is currently rendered using the approved Light theme. Full stylesheet support for system-wide dark mode will be activated in an upcoming milestone.
+                  Light theme and comfortable density are currently the only supported display settings. Other options are disabled because application-wide rendering support is not available.
                 </p>
               </div>
 
@@ -748,7 +841,7 @@ export const SettingsPage: React.FC = () => {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <label
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border-2 transition-all ${
                       draftSettings.appearance.density === 'comfortable'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
@@ -786,6 +879,7 @@ export const SettingsPage: React.FC = () => {
                       type="radio"
                       name="density"
                       value="compact"
+                      disabled
                       checked={draftSettings.appearance.density === 'compact'}
                       onChange={() =>
                         setDraftSettings((prev) => ({
@@ -817,9 +911,10 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving || settingsLoading}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
-                  Save Appearance
+                  {isSaving ? 'Saving…' : 'Save Appearance'}
                 </button>
               </div>
             </div>
@@ -832,7 +927,7 @@ export const SettingsPage: React.FC = () => {
                 <div>
                   <h2 className="text-base font-bold text-[#1E1B4B]">Team &amp; Permissions</h2>
                   <p className="text-xs text-[#64748B] mt-0.5">
-                    Members and roles assigned to <span className="font-semibold text-[#1E1B4B]">{currentWorkspace?.name || 'Atlas Retail SARL'}</span>.
+                    Members and roles assigned to <span className="font-semibold text-[#1E1B4B]">{currentWorkspace?.name || 'the active workspace'}</span>.
                   </p>
                 </div>
                 <Link
@@ -844,93 +939,11 @@ export const SettingsPage: React.FC = () => {
                 </Link>
               </div>
 
-              {/* Members List */}
-              <div className="space-y-3">
-                <h4 className="font-bold text-xs uppercase tracking-wider text-[#94A3B8]">
-                  Workspace Members
-                </h4>
-
-                <div className="divide-y divide-[#F1F5F9] border border-[#E2E8F0] rounded-xl overflow-hidden text-xs">
-                  {/* Member 1: Sara El Amrani */}
-                  <div className="p-3.5 flex items-center justify-between gap-3 hover:bg-[#F8F7FC] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-[#EDE9FE] text-[#6D28D9] font-bold flex items-center justify-center shrink-0">
-                        SE
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-bold text-[#1E1B4B]">Sara El Amrani</p>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669]">
-                            You
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-[#64748B]">sara.elamrani@atlasretail.ma</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-semibold text-[#6D28D9] bg-[#F5F3FF] px-2.5 py-1 rounded-lg">
-                      Workspace Owner
-                    </span>
-                  </div>
-
-                  {/* Member 2: Karim Tazi */}
-                  <div className="p-3.5 flex items-center justify-between gap-3 hover:bg-[#F8F7FC] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-[#CCFBF1] text-[#0F766E] font-bold flex items-center justify-center shrink-0">
-                        KT
-                      </div>
-                      <div>
-                        <p className="font-bold text-[#1E1B4B]">Karim Tazi</p>
-                        <p className="text-[11px] text-[#64748B]">karim.tazi@atlasretail.ma</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-[#475569] bg-slate-100 px-2.5 py-1 rounded-lg">
-                      Marketing Lead
-                    </span>
-                  </div>
-
-                  {/* Member 3: Yasmine Bennani */}
-                  <div className="p-3.5 flex items-center justify-between gap-3 hover:bg-[#F8F7FC] transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-[#FEF3C7] text-[#B45309] font-bold flex items-center justify-center shrink-0">
-                        YB
-                      </div>
-                      <div>
-                        <p className="font-bold text-[#1E1B4B]">Yasmine Bennani</p>
-                        <p className="text-[11px] text-[#64748B]">yasmine.b@atlasretail.ma</p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-[#475569] bg-slate-100 px-2.5 py-1 rounded-lg">
-                      Content Strategist
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Roles & Permissions Reference */}
-              <div className="space-y-3 pt-2">
-                <h4 className="font-bold text-xs uppercase tracking-wider text-[#94A3B8]">
-                  Roles Overview
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3">
-                    <p className="font-bold text-[#6D28D9]">Owner / Admin</p>
-                    <p className="text-[11px] text-[#64748B] mt-1 leading-relaxed">
-                      Complete control over workspaces, team invitations, billing, and campaign budgets.
-                    </p>
-                  </div>
-                  <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3">
-                    <p className="font-bold text-[#1E1B4B]">Member</p>
-                    <p className="text-[11px] text-[#64748B] mt-1 leading-relaxed">
-                      Can create campaigns, manage marketing tasks, track CRM leads, and generate reports.
-                    </p>
-                  </div>
-                  <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3">
-                    <p className="font-bold text-[#1E1B4B]">Viewer</p>
-                    <p className="text-[11px] text-[#64748B] mt-1 leading-relaxed">
-                      Read-only inspection of dashboards, profitability metrics, and campaign reports.
-                    </p>
-                  </div>
-                </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800 flex items-start gap-2.5">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  The workspace API currently provides a member count only. A member directory, role details, invitations, and permission-management endpoints are needed to show this section accurately.
+                </p>
               </div>
 
               {/* Informational notice */}
@@ -953,7 +966,7 @@ export const SettingsPage: React.FC = () => {
               <div className="border-b border-[#F1F5F9] pb-4">
                 <h2 className="text-base font-bold text-[#1E1B4B]">Security &amp; Privacy</h2>
                 <p className="text-xs text-[#64748B] mt-0.5">
-                  Manage account security shortcuts and local privacy preferences.
+                  Manage account security shortcuts and device-local privacy preferences.
                 </p>
               </div>
 
@@ -1044,7 +1057,7 @@ export const SettingsPage: React.FC = () => {
                     <div>
                       <p className="font-semibold text-[#1E1B4B]">Anonymous Analytics Telemetry</p>
                       <p className="text-[#64748B] mt-0.5">
-                        Help improve MarketFlow by automatically reporting anonymized client performance statistics.
+                        Saved as a preference only; automatic telemetry is not currently implemented.
                       </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1071,7 +1084,7 @@ export const SettingsPage: React.FC = () => {
                     <div>
                       <p className="font-semibold text-[#1E1B4B]">Remember Table Filters Across Sessions</p>
                       <p className="text-[#64748B] mt-0.5">
-                        Automatically persist your table sorting, search queries, and status filters across browser reloads.
+                        Saved as a preference only; cross-session table filter persistence is not yet connected.
                       </p>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1107,9 +1120,10 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
+                  disabled={isSaving || settingsLoading}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
-                  Save Privacy Preferences
+                  {isSaving ? 'Saving…' : 'Save Privacy Preferences'}
                 </button>
               </div>
             </div>
