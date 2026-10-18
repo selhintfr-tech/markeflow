@@ -1,18 +1,45 @@
 import React from 'react';
-import { ChevronDown } from 'lucide-react';
-import { budgetUtilizationData } from '../../../data/mock';
+import { Loader2 } from 'lucide-react';
+import type { AnalyticsOverview } from '../dashboardService';
 
-export const BudgetUtilizationCard: React.FC = () => {
-  const { spent, allocated, percentage, currency } = budgetUtilizationData;
+interface BudgetUtilizationCardProps {
+  overview: AnalyticsOverview | null;
+  loading: boolean;
+  selectedPeriod: string;
+}
+
+export const BudgetUtilizationCard: React.FC<BudgetUtilizationCardProps> = ({
+  overview,
+  loading,
+  selectedPeriod,
+}) => {
+  const spent = Number(
+    overview?.campaign_financials?.spend ?? overview?.finance?.expenses ?? 0
+  );
+  const allocated = Number(
+    overview?.campaign_financials?.budget ?? overview?.finance?.budgeted_expenses ?? 0
+  );
+
+  const percentage = allocated > 0 ? Math.round((spent / allocated) * 100) : 0;
+  const currency = 'MAD';
 
   // SVG circular progress calculation
   // Radius = 62, Circumference = 2 * PI * 62 = ~389.56
   const radius = 62;
   const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+  const cappedPercentage = Math.min(percentage, 100);
+  const strokeDashoffset = circumference - (cappedPercentage / 100) * circumference;
+
+  const hasData = Boolean(overview?.campaign_financials || overview?.finance);
 
   return (
-    <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-xs flex flex-col justify-between">
+    <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-xs flex flex-col justify-between min-h-[360px] relative">
+      {loading && (
+        <div className="absolute inset-0 bg-white/70 backdrop-blur-2xs flex items-center justify-center z-10 rounded-xl">
+          <Loader2 className="w-6 h-6 text-[#6D28D9] animate-spin" />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -20,17 +47,13 @@ export const BudgetUtilizationCard: React.FC = () => {
             Budget utilization
           </h2>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Overall spend across all campaigns.
+            Overall spend across workspace campaigns.
           </p>
         </div>
 
-        <button
-          type="button"
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#E2E8F0] bg-white text-xs font-medium text-[#1E1B4B] hover:bg-slate-50 shadow-2xs"
-        >
-          <span>This month</span>
-          <ChevronDown className="w-3.5 h-3.5 text-[#94A3B8]" />
-        </button>
+        <div className="px-2.5 py-1 rounded-md bg-[#F5F3FF] text-[#6D28D9] text-[11px] font-semibold">
+          <span>{selectedPeriod}</span>
+        </div>
       </div>
 
       {/* Circular Gauge / Donut */}
@@ -51,7 +74,7 @@ export const BudgetUtilizationCard: React.FC = () => {
               cx="80"
               cy="80"
               r={radius}
-              stroke="#6D28D9"
+              stroke={percentage > 100 ? '#EF4444' : '#6D28D9'}
               strokeWidth="14"
               fill="transparent"
               strokeDasharray={circumference}
@@ -64,10 +87,10 @@ export const BudgetUtilizationCard: React.FC = () => {
           {/* Centered Percentage Label */}
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
             <span className="text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
-              {percentage}%
+              {hasData ? `${percentage}%` : '—'}
             </span>
             <span className="text-xs text-[#64748B] font-medium mt-0.5">
-              of budget used
+              {hasData ? 'of budget used' : 'No budget set'}
             </span>
           </div>
         </div>
@@ -78,13 +101,13 @@ export const BudgetUtilizationCard: React.FC = () => {
         <div>
           <span className="text-xs text-[#64748B] block">Spent</span>
           <span className="text-base font-bold text-[#1E1B4B]">
-            {spent.toLocaleString()} {currency}
+            {hasData ? `${spent.toLocaleString()} ${currency}` : '—'}
           </span>
         </div>
         <div className="text-right">
           <span className="text-xs text-[#64748B] block">Allocated Budget</span>
           <span className="text-base font-bold text-[#1E1B4B]">
-            {allocated.toLocaleString()} {currency}
+            {hasData && allocated > 0 ? `${allocated.toLocaleString()} ${currency}` : '—'}
           </span>
         </div>
       </div>
