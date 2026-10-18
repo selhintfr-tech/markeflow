@@ -1,54 +1,71 @@
-import React, { useState } from 'react';
-import { CheckCircle2 } from 'lucide-react';
-import { currentUser, initialActiveSessions } from '../../data/mock';
-import type { UserProfile, ActiveSession } from '../../types';
+import React, { useEffect, useState } from 'react';
+import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import type { UserProfile } from '../../types';
+import { ApiError } from '../api/apiClient';
+import { useWorkspace } from '../../context/WorkspaceContext';
 import { ProfileSummaryCard } from './components/ProfileSummaryCard';
 import { PersonalInformationForm } from './components/PersonalInformationForm';
 import { AccountSecurityCard } from './components/AccountSecurityCard';
 import { PasswordChangeModal } from './components/PasswordChangeModal';
-import { ActiveSessionsModal } from './components/ActiveSessionsModal';
-import { SignOutConfirmationModal } from './components/SignOutConfirmationModal';
+import { profileService } from './profileService';
 
 export const MyProfilePage: React.FC = () => {
-  // User Profile state
-  const [user, setUser] = useState<UserProfile>(currentUser);
+  const { currentWorkspace } = useWorkspace();
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-
-  // Active Sessions state
-  const [sessions, setSessions] = useState<ActiveSession[]>(initialActiveSessions);
-
-  // Success alert initial visibility matches Screenshot 2
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
-
-  // Modals state
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
-  const [isSessionsModalOpen, setIsSessionsModalOpen] = useState(false);
-  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
-
-  // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const handleSaveProfile = (updatedUser: UserProfile) => {
-    setUser(updatedUser);
-    setShowSuccessAlert(true);
-    setToastMessage('Profile changes saved successfully.');
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 4000);
-  };
+  useEffect(() => {
+    let isMounted = true;
 
-  const handleRevokeSession = (sessionId: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    setToastMessage('Session has been ended.');
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+    profileService.getCurrentProfile()
+      .then((profile) => {
+        if (isMounted) setUser(profile);
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          setLoadError(error instanceof Error ? error.message : 'Unable to load your profile.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
 
-  const handleConfirmSignOutAll = () => {
-    // Keep only the current session
-    setSessions((prev) => prev.filter((s) => s.isCurrent));
-    setIsSignOutModalOpen(false);
-    setToastMessage('Signed out of 2 other active devices successfully.');
-    setTimeout(() => setToastMessage(null), 4000);
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const displayUser = user
+    ? { ...user, workspaceName: currentWorkspace.name || undefined }
+    : null;
+
+  const handleSaveProfile = async (updatedUser: UserProfile) => {
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const savedProfile = await profileService.updateProfile(updatedUser);
+      setUser((current) => ({
+        ...savedProfile,
+        role: savedProfile.role || current?.role,
+        workspaceName: currentWorkspace.name || undefined,
+      }));
+      setAvatarPreview(null);
+      setShowSuccessAlert(true);
+      setToastMessage('Profile changes saved successfully.');
+    } catch (error) {
+      setSaveError(error instanceof ApiError && error.status === 404
+        ? 'Profile changes were not saved: the backend has not registered PATCH /api/profile.'
+        : error instanceof Error ? error.message : 'Unable to save profile changes.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -66,6 +83,13 @@ export const MyProfilePage: React.FC = () => {
           >
             <span aria-hidden="true" className="font-bold text-base">&times;</span>
           </button>
+        </div>
+      )}
+
+      {saveError && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{saveError}</span>
         </div>
       )}
 
@@ -87,12 +111,23 @@ export const MyProfilePage: React.FC = () => {
       </div>
 
       {/* 2-Column Layout matching Screenshot 2 */}
+      {isLoading ? (
+        <div role="status" className="rounded-xl border border-[#E2E8F0] bg-white p-6 text-sm text-[#64748B]">
+          Loading your profile…
+        </div>
+      ) : loadError ? (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{loadError}</span>
+        </div>
+      ) : displayUser ? (
+      <>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column (~60%) */}
         <div className="lg:col-span-7 space-y-6">
           {/* Card 1: Profile Summary Card */}
           <ProfileSummaryCard
-            user={user}
+            user={displayUser}
             avatarPreview={avatarPreview}
             showSuccessAlert={showSuccessAlert}
             onDismissAlert={() => setShowSuccessAlert(false)}
@@ -100,22 +135,19 @@ export const MyProfilePage: React.FC = () => {
 
           {/* Card 2: Personal Information Form */}
           <PersonalInformationForm
-            key={user.name + user.email + (user.phone || '')}
-            initialUser={user}
+            key={displayUser.name + displayUser.email + (displayUser.phone || '')}
+            initialUser={displayUser}
             avatarPreview={avatarPreview}
             onAvatarChange={setAvatarPreview}
             onSave={handleSaveProfile}
+            isSaving={isSaving}
           />
         </div>
 
         {/* Right Column (~40%) */}
         <div className="lg:col-span-5">
           <AccountSecurityCard
-            sessions={sessions}
             onChangePasswordClick={() => setIsPasswordModalOpen(true)}
-            onReviewSessionsClick={() => setIsSessionsModalOpen(true)}
-            onSignOutAllClick={() => setIsSignOutModalOpen(true)}
-            onRevokeSession={handleRevokeSession}
           />
         </div>
       </div>
@@ -124,20 +156,10 @@ export const MyProfilePage: React.FC = () => {
       <PasswordChangeModal
         isOpen={isPasswordModalOpen}
         onClose={() => setIsPasswordModalOpen(false)}
+        onSubmit={profileService.changePassword}
       />
-
-      <ActiveSessionsModal
-        isOpen={isSessionsModalOpen}
-        sessions={sessions}
-        onClose={() => setIsSessionsModalOpen(false)}
-        onRevokeSession={handleRevokeSession}
-      />
-
-      <SignOutConfirmationModal
-        isOpen={isSignOutModalOpen}
-        onClose={() => setIsSignOutModalOpen(false)}
-        onConfirm={handleConfirmSignOutAll}
-      />
+      </>
+      ) : null}
     </div>
   );
 };

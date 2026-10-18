@@ -11,9 +11,9 @@ export const defaultSettings: AppSettingsState = {
     reportingPeriod: 'Current month',
   },
   workspaceDisplay: {
-    displayName: 'Atlas Retail SARL',
-    industry: 'Retail & E-commerce',
-    contactEmail: 'contact@atlasretail.ma',
+    displayName: '',
+    industry: '',
+    contactEmail: '',
   },
   notifications: {
     campaignBudgetAlerts: true,
@@ -39,10 +39,14 @@ export const loadStoredSettings = (): AppSettingsState => {
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
-        general: { ...defaultSettings.general, ...(parsed.general || {}) },
-        workspaceDisplay: { ...defaultSettings.workspaceDisplay, ...(parsed.workspaceDisplay || {}) },
+        general: {
+          ...defaultSettings.general,
+          language: parsed.general?.language ?? defaultSettings.general.language,
+          reportingPeriod: parsed.general?.reportingPeriod ?? defaultSettings.general.reportingPeriod,
+        },
+        workspaceDisplay: defaultSettings.workspaceDisplay,
         notifications: { ...defaultSettings.notifications, ...(parsed.notifications || {}) },
-        appearance: { ...defaultSettings.appearance, ...(parsed.appearance || {}) },
+        appearance: { ...defaultSettings.appearance, ...(parsed.appearance || {}), theme: 'light', density: 'comfortable' },
         privacy: { ...defaultSettings.privacy, ...(parsed.privacy || {}) },
       };
     }
@@ -54,7 +58,18 @@ export const loadStoredSettings = (): AppSettingsState => {
 
 export const saveStoredSettings = (settings: AppSettingsState): boolean => {
   try {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    const localPreferences: Pick<AppSettingsState, 'notifications' | 'appearance' | 'privacy'> & {
+      general: Pick<AppSettingsState['general'], 'language' | 'reportingPeriod'>;
+    } = {
+      general: {
+        language: settings.general.language,
+        reportingPeriod: settings.general.reportingPeriod,
+      },
+      notifications: settings.notifications,
+      appearance: settings.appearance,
+      privacy: settings.privacy,
+    };
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(localPreferences));
     return true;
   } catch (err) {
     console.error('Failed to save settings to localStorage:', err);
