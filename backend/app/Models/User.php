@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 
 class User extends Authenticatable
 {
@@ -152,11 +153,24 @@ class User extends Authenticatable
             'email' => $this->email,
             'phone' => $this->phone,
             'job_title' => $this->job_title,
-            'avatar_url' => $this->avatar_url,
+            'avatar_url' => $this->avatarPublicUrl(),
             'timezone' => $this->timezone ?? 'Africa/Casablanca',
             'locale' => $this->locale ?? 'en',
             'role' => $primaryMembership?->role,
             'workspaceId' => $primaryMembership?->workspace_id,
         ];
+    }
+
+    public function avatarPublicUrl(): ?string
+    {
+        if (! $this->avatar_url) {
+            return null;
+        }
+
+        if (filter_var($this->avatar_url, FILTER_VALIDATE_URL)) {
+            return $this->avatar_url;
+        }
+
+        return Storage::disk(config('filesystems.avatar_disk', 'public'))->url($this->avatar_url);
     }
 }

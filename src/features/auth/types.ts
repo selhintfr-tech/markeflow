@@ -17,10 +17,15 @@ export interface ForgotPasswordData {
 }
 
 export interface ResetPasswordData {
-  token: string;
+  recovery_token: string;
   email: string;
   password: string;
   password_confirmation: string;
+}
+
+export interface VerifyRecoveryCodeData {
+  email: string;
+  code: string;
 }
 
 export interface AuthUser {
@@ -29,11 +34,13 @@ export interface AuthUser {
   email: string;
   role?: string;
   workspaceId?: string;
+  avatar_url?: string | null;
 }
 
 export interface AuthResponse {
   success: boolean;
   message?: string;
   user?: AuthUser;
+  recoveryToken?: string;
   errors?: Record<string, string[]>;
 }

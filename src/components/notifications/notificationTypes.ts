@@ -5,16 +5,24 @@ export interface Notification {
   type: NotificationType;
   title: string;
   description: string;
-  timestamp: string;
-  isRead: boolean;
-  workspaceId?: string;
+  action_url: string | null;
+  created_at: string;
+  is_read: boolean;
 }
 
-export interface ReadStateMap {
-  [notificationId: string]: boolean;
+export interface NotificationsResponse {
+  data: Notification[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+    unread_count: number;
+  };
 }
 
-export interface StorageSchema {
-  version: number;
-  readStates: ReadStateMap;
+export interface UnreadCountResponse {
+  data: {
+    unread_count: number;
+  };
 }

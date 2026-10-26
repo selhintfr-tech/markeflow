@@ -117,7 +117,7 @@ export const TasksBoardView: React.FC<TasksBoardViewProps> = ({
                           )}
 
                           <span className="text-[#94A3B8] flex items-center gap-0.5">
-                            <Calendar className="w-3 h-3" /> {task.dueDate.split(' ')[0]} {task.dueDate.split(' ')[1]}
+                            <Calendar className="w-3 h-3" /> {task.dueDate ? (task.dueDate.includes(' ') ? `${task.dueDate.split(' ')[0]} ${task.dueDate.split(' ')[1] || ''}`.trim() : task.dueDate) : 'No deadline'}
                           </span>
                         </div>
 

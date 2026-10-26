@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MoreHorizontal, Eye, Trash2, FileText, BarChart2, Database, Users, Folder } from 'lucide-react';
 import type { Report } from '../types';
+import { ActionDropdown } from '../../../components/ui/ActionDropdown';
 
 interface SavedReportsTableProps {
   reports: Report[];
@@ -150,47 +151,49 @@ export const SavedReportsTable: React.FC<SavedReportsTableProps> = ({
                     <ReportStatusBadge status={report.status} />
                   </td>
                   <td className="py-3 px-3 text-right">
-                    <div className="relative inline-block text-left">
+                    <ActionDropdown
+                      isOpen={menuOpenId === report.id}
+                      onClose={() => setMenuOpenId(null)}
+                      ariaLabel={`Actions for report ${report.name}`}
+                      className="w-36 py-1 text-left text-xs"
+                      trigger={
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMenuOpenId(menuOpenId === report.id ? null : report.id);
+                          }}
+                          className="p-1 rounded hover:bg-[#E2E8F0] transition-colors cursor-pointer"
+                          aria-label={`Actions for report ${report.name}`}
+                        >
+                          <MoreHorizontal className="w-4 h-4 text-[#64748B]" />
+                        </button>
+                      }
+                    >
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setMenuOpenId(menuOpenId === report.id ? null : report.id);
+                          onViewReport(report);
+                          setMenuOpenId(null);
                         }}
-                        className="p-1 rounded hover:bg-[#E2E8F0] transition-colors"
-                        aria-label="Actions"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] transition-colors cursor-pointer"
                       >
-                        <MoreHorizontal className="w-4 h-4 text-[#64748B]" />
+                        <Eye className="w-3.5 h-3.5" />
+                        View
                       </button>
-
-                      {menuOpenId === report.id && (
-                        <div className="absolute right-0 top-full mt-1 w-36 rounded-lg bg-white border border-[#E2E8F0] shadow-lg py-1 z-50 text-left">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onViewReport(report);
-                              setMenuOpenId(null);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] transition-colors"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                            View
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(report.id);
-                            }}
-                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(report.id);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </ActionDropdown>
                   </td>
                 </tr>
               );

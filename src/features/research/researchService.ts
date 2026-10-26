@@ -10,27 +10,46 @@ export interface SwotItemBackend {
 }
 
 export interface CompetitorProfileBackend {
+  id?: string;
   name: string;
   website?: string | null;
   description?: string | null;
+  positioning?: string | null;
+  price_level?: 'Low' | 'Medium' | 'High' | null;
+  price?: number | string | null;
+  currency?: string | null;
+  main_offer?: string | null;
+  region?: string | null;
+  city?: string | null;
+  reviewed_on?: string | null;
+  evidence?: string | null;
   strengths?: string[];
   weaknesses?: string[];
 }
 
 export interface OpportunityThreatBackend {
+  id?: string;
   title: string;
   description?: string | null;
+  region?: string | null;
+  confidence?: 'High' | 'Medium' | 'Low' | null;
+  recorded_on?: string | null;
 }
 
 export interface FindingBackend {
-  title: string;
+  title: string | null;
   insight: string;
+  status?: 'New' | 'Reviewed' | 'Ready' | 'Archived';
 }
 
 export interface SourceBackend {
+  id?: string;
   title: string;
   url: string;
   accessed_on?: string | null;
+  type?: string | null;
+  notes?: string | null;
+  reliability?: 'High' | 'Medium' | 'Low' | null;
 }
 
 export interface ResearchRecord {

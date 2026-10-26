@@ -17,7 +17,7 @@ class FinanceTransaction extends Model
 
     public const TYPES = [self::TYPE_EXPENSE, self::TYPE_INCOME];
 
-    protected $fillable = ['type', 'category', 'description', 'amount', 'occurred_on'];
+    protected $fillable = ['campaign_id', 'order_id', 'type', 'category', 'description', 'amount', 'occurred_on', 'created_by'];
 
     protected function casts(): array
     {

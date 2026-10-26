@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { TaskItem } from '../types';
+import { ActionDropdown } from '../../../components/ui/ActionDropdown';
 
 interface TasksTableProps {
   tasks: TaskItem[];
@@ -243,7 +244,7 @@ export const TasksTable: React.FC<TasksTableProps> = ({
 
                     {/* Due Date */}
                     <td className="py-3 px-3 text-xs text-[#475569] whitespace-nowrap">
-                      {task.dueDate}
+                      {task.dueDate || 'No deadline'}
                     </td>
 
                     {/* Status */}
@@ -253,46 +254,50 @@ export const TasksTable: React.FC<TasksTableProps> = ({
 
                     {/* Actions Menu */}
                     <td
-                      className="py-3 pr-5 pl-3 text-right relative"
+                      className="py-3 pr-5 pl-3 text-right"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActiveMenuId(activeMenuId === task.id ? null : task.id)
+                      <ActionDropdown
+                        isOpen={activeMenuId === task.id}
+                        onClose={() => setActiveMenuId(null)}
+                        ariaLabel={`Actions for task ${task.title}`}
+                        className="w-32 py-1 text-left text-xs"
+                        trigger={
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveMenuId(activeMenuId === task.id ? null : task.id)
+                            }
+                            className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                            aria-label={`Actions for task ${task.title}`}
+                          >
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
                         }
-                        className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
                       >
-                        <MoreHorizontal className="w-4 h-4" />
-                      </button>
-
-                      {/* Dropdown Menu */}
-                      {activeMenuId === task.id && (
-                        <div className="absolute right-5 top-10 w-32 bg-white rounded-lg shadow-lg border border-[#E2E8F0] py-1 z-20">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveMenuId(null);
-                              onEditTask(task);
-                            }}
-                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
-                          >
-                            <Edit2 className="w-3.5 h-3.5 text-[#64748B]" />
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActiveMenuId(null);
-                              onDeleteTask(task.id);
-                            }}
-                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            onEditTask(task);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-[#64748B]" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            onDeleteTask(task.id);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                          Delete
+                        </button>
+                      </ActionDropdown>
                     </td>
                   </tr>
                 );

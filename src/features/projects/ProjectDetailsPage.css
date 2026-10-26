@@ -1,0 +1,191 @@
+.project-details-page {
+  background-color: var(--shell-canvas);
+  color: var(--shell-text);
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-slate-950'] {
+  background-color: #f8f7fc !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-slate-900'] {
+  background-color: #ffffff !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-slate-800'] {
+  background-color: #f1f5f9 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-slate-700'] {
+  background-color: #e2e8f0 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-violet-950'] {
+  background-color: #f5f3ff !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-teal-950'] {
+  background-color: #f0fdfa !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-amber-950'] {
+  background-color: #fffbeb !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:bg-red-950'] {
+  background-color: #fef2f2 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-slate-100'],
+html[data-theme='light'] .project-details-page [class~='dark:text-white'] {
+  color: #1e1b4b !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-slate-200'] {
+  color: #334155 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-slate-300'] {
+  color: #475569 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-slate-400'] {
+  color: #64748b !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-violet-200'],
+html[data-theme='light'] .project-details-page [class~='dark:text-violet-300'] {
+  color: #6d28d9 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-teal-200'],
+html[data-theme='light'] .project-details-page [class~='dark:text-teal-300'] {
+  color: #0f766e !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-amber-100'] {
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:text-red-200'] {
+  color: #991b1b !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:border-slate-700'],
+html[data-theme='light'] .project-details-page [class~='dark:border-slate-800'],
+html[data-theme='light'] .project-details-page [class~='dark:divide-slate-800'] {
+  border-color: #e2e8f0 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:border-amber-900'] {
+  border-color: #fde68a !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:border-red-900'] {
+  border-color: #fecaca !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:hover:bg-slate-800']:hover {
+  background-color: #f1f5f9 !important;
+}
+
+html[data-theme='light'] .project-details-page [class~='dark:focus:ring-violet-900']:focus {
+  --tw-ring-color: #ddd6fe !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-slate-950'] {
+  background-color: #020617 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-slate-900'] {
+  background-color: #0f172a !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-slate-800'] {
+  background-color: #1e293b !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-slate-700'] {
+  background-color: #334155 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-violet-950'] {
+  background-color: #2e1065 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-teal-950'] {
+  background-color: #042f2e !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-amber-950'] {
+  background-color: #451a03 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:bg-red-950'] {
+  background-color: #450a0a !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-slate-100'] {
+  color: #f1f5f9 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-slate-200'] {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-slate-300'] {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-slate-400'] {
+  color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-violet-200'] {
+  color: #ddd6fe !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-violet-300'] {
+  color: #c4b5fd !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-teal-200'] {
+  color: #99f6e4 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-teal-300'] {
+  color: #5eead4 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-amber-100'] {
+  color: #fef3c7 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-red-200'] {
+  color: #fecaca !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:text-white'] {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:border-slate-700'],
+html[data-theme='dark'] .project-details-page [class~='dark:border-slate-800'],
+html[data-theme='dark'] .project-details-page [class~='dark:divide-slate-800'] {
+  border-color: #334155 !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:border-amber-900'] {
+  border-color: #78350f !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:border-red-900'] {
+  border-color: #7f1d1d !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:hover:bg-slate-800']:hover {
+  background-color: #1e293b !important;
+}
+
+html[data-theme='dark'] .project-details-page [class~='dark:focus:ring-violet-900']:focus {
+  --tw-ring-color: #4c1d95 !important;
+}

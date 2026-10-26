@@ -47,6 +47,25 @@ class MarketingStrategy extends Model
         ];
     }
 
+    public function measuredProgress(): ?int
+    {
+        $items = $this->action_plan;
+        if (! is_array($items) || $items === []) {
+            return null;
+        }
+
+        $statuses = ['Pending', 'In Progress', 'Completed'];
+        foreach ($items as $item) {
+            if (! is_array($item) || ! in_array($item['status'] ?? null, $statuses, true)) {
+                return null;
+            }
+        }
+
+        $completed = count(array_filter($items, fn (array $item): bool => $item['status'] === 'Completed'));
+
+        return (int) round($completed / count($items) * 100);
+    }
+
     protected static function booted(): void
     {
         static::creating(function (self $strategy): void {

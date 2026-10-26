@@ -189,6 +189,32 @@ class AuthTest extends TestCase
             ->assertUnauthorized();
     }
 
+    public function test_database_session_survives_separate_requests_and_is_not_browser_close_expired(): void
+    {
+        config([
+            'session.driver' => 'database',
+            'session.expire_on_close' => false,
+            'session.lifetime' => 120,
+        ]);
+        $user = User::create([
+            'name' => 'Database Session User',
+            'email' => 'database-session@example.com',
+            'password' => Hash::make('CorrectPassword123!'),
+        ]);
+
+        $login = $this->postJson('/api/login', [
+            'email' => $user->email,
+            'password' => 'CorrectPassword123!',
+        ])->assertOk();
+        $this->assertNotEmpty($login->getCookie(config('session.cookie'))?->getValue());
+        $this->assertDatabaseHas('sessions', ['user_id' => $user->id]);
+
+        $this->getJson('/api/user')
+            ->assertOk()
+            ->assertJsonPath('id', (string) $user->id);
+        $this->assertFalse(config('session.expire_on_close'));
+    }
+
     public function test_login_fails_with_wrong_password(): void
     {
         User::create([

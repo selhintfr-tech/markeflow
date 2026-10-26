@@ -67,6 +67,23 @@ export const profileService = {
     return toUserProfile(response.data);
   },
 
+  async uploadAvatar(file: File): Promise<UserProfile> {
+    const body = new FormData();
+    body.append('avatar', file);
+    const response = await apiRequest<ProfileResource>('/api/profile/avatar', {
+      method: 'POST',
+      body,
+    });
+    return toUserProfile(response.data);
+  },
+
+  async deleteAvatar(): Promise<UserProfile> {
+    const response = await apiRequest<ProfileResource>('/api/profile/avatar', {
+      method: 'DELETE',
+    });
+    return toUserProfile(response.data);
+  },
+
   async changePassword(payload: {
     current_password: string;
     new_password: string;

@@ -13,6 +13,8 @@ class ComparePeriodsRequest extends FormRequest
             'to' => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
             'previous_from' => ['sometimes', 'required', 'date_format:Y-m-d'],
             'previous_to' => ['sometimes', 'required', 'date_format:Y-m-d', 'after_or_equal:previous_from'],
+            'campaign_id' => ['sometimes', 'nullable', 'string'],
+            'channel' => ['sometimes', 'nullable', 'string', 'max:100'],
         ];
     }
 }

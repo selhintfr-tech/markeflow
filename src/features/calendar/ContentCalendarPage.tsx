@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { calendarService, type CalendarEvent, type CalendarEventInput } from './calendarService';
+import { ContentPlanner } from './ContentPlanner';
 import { projectService, type ProjectRecord } from '../projects/projectService';
 import { taskService, type TaskRecord } from '../tasks/taskService';
 
@@ -75,7 +76,7 @@ const emptyForm = (date: string): EventForm => ({
   taskId: '',
 });
 
-export const ContentCalendarPage: React.FC = () => {
+const WorkspaceEventCalendar: React.FC<{ onShowContent: () => void }> = ({ onShowContent }) => {
   const { currentWorkspace, hasWorkspace, isLoadingWorkspaces } = useWorkspace();
   const workspaceId = currentWorkspace.id;
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -117,6 +118,7 @@ export const ContentCalendarPage: React.FC = () => {
       start: new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1),
       end: new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0),
     };
+
   }, [viewMode, selectedDate, currentMonth]);
 
   const from = useMemo(() => zonedIso(dateInput(visibleRange.start), '00:00', timezoneNow()), [visibleRange.start]);
@@ -288,7 +290,10 @@ export const ContentCalendarPage: React.FC = () => {
           <h1 className="mt-1 text-2xl font-bold">Calendar</h1>
           <p className="mt-1 text-sm text-slate-600">{currentWorkspace.name} · persisted workspace events</p>
         </div>
-        <button onClick={() => openCreate()} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800">Create event</button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onShowContent} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">Social content</button>
+          <button onClick={() => openCreate()} className="rounded-lg bg-violet-700 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-800">Create event</button>
+        </div>
       </header>
 
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
@@ -380,6 +385,18 @@ export const ContentCalendarPage: React.FC = () => {
         </section>
       </div>}
     </main>
+  );
+};
+
+export const ContentCalendarPage: React.FC = () => {
+  const [section, setSection] = useState<'content' | 'events'>('content');
+
+  return (
+    <div className="mx-auto max-w-[1500px] px-4 pt-3 sm:px-6">
+      {section === 'content'
+        ? <ContentPlanner onShowEvents={() => setSection('events')} />
+        : <WorkspaceEventCalendar onShowContent={() => setSection('content')} />}
+    </div>
   );
 };
 

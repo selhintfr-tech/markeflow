@@ -311,7 +311,7 @@ export const TasksPage: React.FC = () => {
 
   // Save new task
   const handleCreateTask = async (newTaskData: Partial<TaskItem>) => {
-    if (!hasWorkspace || !newTaskData.title || !newTaskData.dueDate) return;
+    if (!hasWorkspace || !newTaskData.title) return;
     setIsSaving(true);
     setActionError(null);
     try {
@@ -322,7 +322,7 @@ export const TasksPage: React.FC = () => {
         campaign_id: newTaskData.campaignId || null,
         assignee_id: newTaskData.assigneeId || null,
         priority: newTaskData.priority || 'Medium',
-        due_date: newTaskData.dueDate,
+        due_date: newTaskData.dueDate || null,
         status: newTaskData.status || 'To Do',
       });
       setSelectedTaskId(saved.id);
@@ -348,11 +348,11 @@ export const TasksPage: React.FC = () => {
       const saved = await taskService.update(currentWorkspace.id, editingTask.id, {
         title: taskData.title || editingTask.title,
         description: taskData.description || null,
-        project_id: taskData.projectId || null,
-        campaign_id: taskData.campaignId || null,
-        assignee_id: taskData.assigneeId || null,
+        project_id: taskData.projectId !== undefined ? (taskData.projectId || null) : (editingTask.projectId || null),
+        campaign_id: taskData.campaignId !== undefined ? (taskData.campaignId || null) : (editingTask.campaignId || null),
+        assignee_id: taskData.assigneeId !== undefined ? (taskData.assigneeId || null) : (editingTask.assigneeId || null),
         priority: taskData.priority || editingTask.priority,
-        due_date: taskData.dueDate || editingTask.dueDate,
+        due_date: taskData.dueDate !== undefined ? (taskData.dueDate || null) : (editingTask.dueDate || null),
         status: taskData.status || editingTask.status,
       });
       const projectsById = new Map(projects.map((project) => [project.id, project]));

@@ -26,15 +26,26 @@ class ReportController extends Controller
     {
         $this->access->authorize($request->user());
         $filters = $request->validate([
-            'type' => ['sometimes', 'string', 'in:overview,campaigns,tasks,crm,finance,timeseries'],
+            'type' => ['sometimes', 'string', 'in:overview,campaigns,tasks,crm,finance,timeseries,projects'],
+            'status' => ['sometimes', 'string', 'in:Ready,In Review,Draft,Archived,Unassigned'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
 
         return SavedReportResource::collection(
             SavedReport::query()
+                ->with('creator:id,name')
                 ->where('workspace_id', $this->tenantContext->getWorkspaceId())
                 ->when($filters['type'] ?? null, fn ($query, string $type) => $query->where('type', $type))
+                ->when($filters['status'] ?? null, function ($query, string $status): void {
+                    if ($status === 'Unassigned') {
+                        $query->whereNull('status');
+
+                        return;
+                    }
+
+                    $query->where('status', $status);
+                })
                 ->orderByDesc('updated_at')
                 ->paginate($filters['per_page'] ?? 15)
                 ->withQueryString()
@@ -47,16 +58,17 @@ class ReportController extends Controller
         $report = new SavedReport($request->validated());
         $report->workspace_id = $this->tenantContext->getWorkspaceId();
         $report->created_by = $request->user()->id;
+        $report->status ??= 'Draft';
         $report->save();
 
-        return (new SavedReportResource($report))->response()->setStatusCode(201);
+        return (new SavedReportResource($report->load('creator:id,name')))->response()->setStatusCode(201);
     }
 
     public function show(Request $request, string $report)
     {
         $this->access->authorize($request->user());
 
-        return new SavedReportResource($this->findReport($report));
+        return new SavedReportResource($this->findReport($report)->load('creator:id,name'));
     }
 
     public function update(UpdateReportRequest $request, string $report)
@@ -74,7 +86,7 @@ class ReportController extends Controller
         $record->fill($attributes);
         $record->save();
 
-        return new SavedReportResource($record->refresh());
+        return new SavedReportResource($record->refresh()->load('creator:id,name'));
     }
 
     public function destroy(Request $request, string $report)

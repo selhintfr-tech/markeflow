@@ -41,7 +41,7 @@ function recordToDetail(
   const initiatives: StrategicInitiative[] = actionPlan.map((item, idx) => {
     const statusVal: StrategicInitiative['status'] =
       item.status === 'Completed'
-        ? 'Active'
+        ? 'Completed'
         : item.status === 'Pending'
         ? 'Planned'
         : 'In progress';
@@ -70,14 +70,14 @@ function recordToDetail(
     id: `obj-${idx}`,
     kpi: obj,
     target: metrics[idx] || 'Measurable target milestone',
-    currentProgressText: `${record.progress}% complete`,
-    progressPercentage: record.progress,
+    currentProgressText: 'Not measured',
+    progressPercentage: null,
     owner: {
       name: 'Marketing Lead',
       initials: 'ML',
     },
     deadline: record.ends_on || 'Ongoing',
-    statusType: record.progress >= 70 ? 'teal' : 'purple',
+    statusType: 'purple',
   }));
 
   const mappedChannels: StrategyChannelAllocation[] = channels.map((ch, idx) => {
@@ -100,6 +100,11 @@ function recordToDetail(
       iconType,
     };
   });
+  const allInitiativesMeasurable = actionPlan.length > 0
+    && actionPlan.every((item) => ['Pending', 'In Progress', 'Completed'].includes(item.status || ''));
+  const completedInitiatives = allInitiativesMeasurable
+    ? actionPlan.filter((item) => item.status === 'Completed').length
+    : null;
 
   const periodLabel =
     record.starts_on && record.ends_on
@@ -125,11 +130,11 @@ function recordToDetail(
       'Comprehensive marketing strategy outlining clear growth targets, audiences, and channel allocation.',
     audiences: mappedAudiences,
     completionPercentage: record.progress,
-    objectivesOnTrack: Math.ceil(objectives.length * (record.progress ? record.progress / 100 : 0.6)),
-    objectivesTotal: Math.max(objectives.length, 1),
+    objectivesOnTrack: completedInitiatives,
+    objectivesTotal: allInitiativesMeasurable ? actionPlan.length : null,
     channelsActive: channels.length,
     channelsTotal: Math.max(channels.length, 1),
-    initiativesInProgressCount: initiatives.filter((i) => i.status !== 'Active').length,
+    initiativesInProgressCount: actionPlan.filter((item) => item.status === 'In Progress').length,
     objectives: mappedObjectives,
     channelAllocations: mappedChannels,
     initiatives,
@@ -171,7 +176,6 @@ export const MarketingStrategiesPage: React.FC = () => {
   const [stratStartsOn, setStratStartsOn] = useState('2026-10-01');
   const [stratEndsOn, setStratEndsOn] = useState('2027-03-31');
   const [stratStatus, setStratStatus] = useState<'Draft' | 'Planned' | 'Active' | 'Completed' | 'On Hold'>('Active');
-  const [stratProgress, setStratProgress] = useState(65);
   const [stratAudienceIds, setStratAudienceIds] = useState<string[]>([]);
 
   // Form states for Add Initiative
@@ -261,7 +265,7 @@ export const MarketingStrategiesPage: React.FC = () => {
   // SVG circular completion indicator (Teal)
   const completionRadius = 40;
   const completionCircumference = 2 * Math.PI * completionRadius;
-  const completionPercentage = strategy ? strategy.completionPercentage : 0;
+  const completionPercentage = strategy?.completionPercentage ?? 0;
   const completionOffset =
     completionCircumference - (completionPercentage / 100) * completionCircumference;
 
@@ -278,7 +282,6 @@ export const MarketingStrategiesPage: React.FC = () => {
     setStratStartsOn('2026-10-01');
     setStratEndsOn('2027-03-31');
     setStratStatus('Active');
-    setStratProgress(50);
     setStratAudienceIds([]);
     setIsCreateStrategyModalOpen(true);
   };
@@ -312,7 +315,6 @@ export const MarketingStrategiesPage: React.FC = () => {
         starts_on: stratStartsOn || null,
         ends_on: stratEndsOn || null,
         status: stratStatus,
-        progress: stratProgress,
         audience_ids: stratAudienceIds.length > 0 ? stratAudienceIds : undefined,
       };
 
@@ -344,7 +346,6 @@ export const MarketingStrategiesPage: React.FC = () => {
     setStratStatus(
       selectedRecord.status === 'Archived' ? 'Draft' : selectedRecord.status
     );
-    setStratProgress(selectedRecord.progress || 0);
     setStratAudienceIds(selectedRecord.audience_ids || []);
     setIsEditStrategyModalOpen(true);
   };
@@ -378,7 +379,6 @@ export const MarketingStrategiesPage: React.FC = () => {
         starts_on: stratStartsOn || null,
         ends_on: stratEndsOn || null,
         status: stratStatus,
-        progress: stratProgress,
         audience_ids: stratAudienceIds,
       };
 
@@ -467,6 +467,29 @@ export const MarketingStrategiesPage: React.FC = () => {
     } catch (err: unknown) {
       const msg = err instanceof ApiError ? err.message : 'Failed to delete initiative.';
       showToast(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateInitiativeStatus = async (
+    index: number,
+    status: ActionPlanItem['status'],
+  ) => {
+    if (!currentWorkspace?.id || !selectedRecord || !status || isSubmitting) return;
+    setIsSubmitting(true);
+    setActionError(null);
+
+    try {
+      const updatedActionPlan = (selectedRecord.action_plan || []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, status } : item,
+      );
+      const updated = await strategyService.update(currentWorkspace.id, selectedRecord.id, {
+        action_plan: updatedActionPlan,
+      });
+      setStrategies((prev) => prev.map((strategyRecord) => strategyRecord.id === updated.id ? updated : strategyRecord));
+    } catch (err: unknown) {
+      setActionError(err instanceof ApiError ? err.message : 'Failed to update initiative status.');
     } finally {
       setIsSubmitting(false);
     }
@@ -808,18 +831,22 @@ export const MarketingStrategiesPage: React.FC = () => {
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                       <span className="text-2xl font-extrabold text-[#1E1B4B]">
-                        {strategy.completionPercentage}%
+                        {strategy.completionPercentage === null ? '—' : `${strategy.completionPercentage}%`}
                       </span>
-                      <span className="text-[10px] text-[#64748B] font-medium">Completion</span>
+                      <span className="text-[10px] text-[#64748B] font-medium">
+                        {strategy.completionPercentage === null ? 'Not measured' : 'Completion'}
+                      </span>
                     </div>
                   </div>
 
                   {/* Metrics breakdown */}
                   <div className="space-y-2.5 pl-2">
                     <div>
-                      <span className="text-[11px] text-[#64748B] block">Objectives tracked</span>
+                      <span className="text-[11px] text-[#64748B] block">Initiatives completed</span>
                       <span className="text-base font-bold text-[#1E1B4B]">
-                        {strategy.objectivesOnTrack} / {strategy.objectivesTotal}
+                        {strategy.objectivesOnTrack === null || strategy.objectivesTotal === null
+                          ? 'Not measured'
+                          : `${strategy.objectivesOnTrack} / ${strategy.objectivesTotal}`}
                       </span>
                     </div>
                     <div>
@@ -875,13 +902,13 @@ export const MarketingStrategiesPage: React.FC = () => {
                           <div className="space-y-1">
                             <div className="flex items-center justify-between text-[11px]">
                               <span className="text-[#1E1B4B] font-medium">{obj.currentProgressText}</span>
-                              <span className="font-semibold text-[#64748B]">{obj.progressPercentage}%</span>
+                              <span className="font-semibold text-[#64748B]">{obj.progressPercentage === null ? 'Not measured' : `${obj.progressPercentage}%`}</span>
                             </div>
                             <div className="w-full bg-[#F1F5F9] rounded-full h-1.5 overflow-hidden">
-                              <div
+                              {obj.progressPercentage !== null && <div
                                 className="bg-[#6D28D9] h-1.5 rounded-full"
                                 style={{ width: `${obj.progressPercentage}%` }}
-                              />
+                              />}
                             </div>
                           </div>
                         </td>
@@ -974,7 +1001,7 @@ export const MarketingStrategiesPage: React.FC = () => {
                       <td className="py-3.5 pr-3">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${
-                            init.status === 'Active'
+                            init.status === 'Active' || init.status === 'Completed'
                               ? 'bg-[#CCFBF1] text-[#0D9488]'
                               : init.status === 'In progress'
                               ? 'bg-[#FEF3C7] text-[#D97706]'
@@ -986,6 +1013,22 @@ export const MarketingStrategiesPage: React.FC = () => {
                       </td>
                       <td className="py-3.5 pr-3 text-[#64748B]">{init.nextStep}</td>
                       <td className="py-3.5 text-right">
+                        {selectedRecord?.action_plan?.[idx] && (
+                          <select
+                            aria-label={`Status for ${init.name}`}
+                            disabled={isSubmitting}
+                            value={selectedRecord.action_plan[idx].status || 'Pending'}
+                            onChange={(event) => void handleUpdateInitiativeStatus(
+                              idx,
+                              event.target.value as ActionPlanItem['status'],
+                            )}
+                            className="mr-2 rounded border border-[#E2E8F0] px-2 py-1 text-[10px]"
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDeleteInitiative(idx)}
@@ -1281,15 +1324,7 @@ export const MarketingStrategiesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block font-semibold text-[#1E1B4B] mb-1">Progress Percentage: {stratProgress}%</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={stratProgress}
-                  onChange={(e) => setStratProgress(Number(e.target.value))}
-                  className="w-full accent-[#6D28D9]"
-                />
+                <p className="text-xs text-[#64748B]">Progress is calculated from persisted initiative statuses. Objectives without completion records remain unmeasured.</p>
               </div>
 
               <div>

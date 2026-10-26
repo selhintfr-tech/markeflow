@@ -19,6 +19,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(TenantContext::class, function () {
             return new TenantContext;
         });
+
+        // Bind WorkspaceAuthorizationService as a scoped singleton with in-memory memoization
+        $this->app->scoped(\App\Services\WorkspaceAuthorizationService::class, function () {
+            return new \App\Services\WorkspaceAuthorizationService;
+        });
+
+        // Register Ozon Delivery Provider Adapter for Moroccan logistics
+        $this->app->singleton(\App\Services\Delivery\Ozon\OzonApiClient::class);
+        $this->app->singleton(\App\Services\Delivery\Ozon\OzonDeliveryAdapter::class);
+        $this->app->tag(\App\Services\Delivery\Ozon\OzonDeliveryAdapter::class, 'delivery.providers');
     }
 
     /**

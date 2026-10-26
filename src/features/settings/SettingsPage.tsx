@@ -20,24 +20,41 @@ import {
   Info,
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
-import type { SettingsSection, AppSettingsState } from './types';
+import { useAppearance } from '../../context/useAppearance';
+import type { SettingsSection, AppSettingsState, AppearanceSettings } from './types';
 import { loadStoredSettings, saveStoredSettings } from './settingsData';
 import { settingsService } from './settingsService';
 
 export const SettingsPage: React.FC = () => {
   const { currentWorkspace, updateWorkspace } = useWorkspace();
+  const {
+    savedAppearance,
+    isAppearanceLoaded,
+    previewAppearance,
+    saveAppearance,
+    cancelAppearance,
+  } = useAppearance();
 
   // Active section tab
   const [activeSection, setActiveSection] = useState<SettingsSection>('general');
 
   // Stored state vs draft state
-  const [savedSettings, setSavedSettings] = useState<AppSettingsState>(loadStoredSettings);
-  const [draftSettings, setDraftSettings] = useState<AppSettingsState>(loadStoredSettings);
+  const [savedSettings, setSavedSettings] = useState<AppSettingsState>(() => ({
+    ...loadStoredSettings(),
+    appearance: savedAppearance,
+  }));
+  const [draftSettings, setDraftSettings] = useState<AppSettingsState>(() => ({
+    ...loadStoredSettings(),
+    appearance: savedAppearance,
+  }));
   const [workspaceRequestId, setWorkspaceRequestId] = useState<string | null>(null);
   const [loadedWorkspaceId, setLoadedWorkspaceId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const settingsLoading = Boolean(currentWorkspace.id && workspaceRequestId !== currentWorkspace.id);
   const workspaceSettingsLoaded = Boolean(currentWorkspace.id && loadedWorkspaceId === currentWorkspace.id);
+  const appearanceHasChanges =
+    draftSettings.appearance.theme !== savedSettings.appearance.theme ||
+    draftSettings.appearance.density !== savedSettings.appearance.density;
 
   // Toast feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -65,8 +82,8 @@ export const SettingsPage: React.FC = () => {
             industry: workspace.industry || '',
           },
         });
-        setSavedSettings(applyWorkspace);
-        setDraftSettings(applyWorkspace);
+        setSavedSettings((current) => applyWorkspace(current));
+        setDraftSettings((current) => applyWorkspace(current));
         setLoadedWorkspaceId(currentWorkspace.id);
       })
       .catch((error: unknown) => {
@@ -94,6 +111,11 @@ export const SettingsPage: React.FC = () => {
     setTimeout(() => setErrorMessage(null), 4000);
   };
 
+  const handleAppearanceChange = (appearance: AppearanceSettings) => {
+    setDraftSettings((current) => ({ ...current, appearance }));
+    previewAppearance(appearance);
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     setErrorMessage(null);
@@ -106,6 +128,15 @@ export const SettingsPage: React.FC = () => {
         });
         setSavedSettings(draftSettings);
         showToast('Workspace details saved.');
+        return;
+      }
+
+      if (activeSection === 'appearance') {
+        if (!saveAppearance(draftSettings.appearance)) {
+          throw new Error('Could not save appearance preferences for this account in this browser.');
+        }
+        setSavedSettings((current) => ({ ...current, appearance: draftSettings.appearance }));
+        showToast('Appearance preferences saved for this account on this browser.');
         return;
       }
 
@@ -134,6 +165,7 @@ export const SettingsPage: React.FC = () => {
 
   const handleCancel = () => {
     setDraftSettings(savedSettings);
+    cancelAppearance();
     showToast('Changes discarded.');
   };
 
@@ -547,7 +579,7 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-[#FAF5FF] border border-[#E9D5FF] rounded-xl p-3.5 flex items-start gap-2.5 text-xs text-[#6D28D9]">
                 <Info className="w-4 h-4 shrink-0 text-[#6D28D9] mt-0.5" />
                 <p className="leading-relaxed">
-                  These preferences are saved only in this browser. Notification dispatch and email delivery are not connected.
+                  These preferences are saved only in this browser and do not control in-app notification delivery or email alerts.
                 </p>
               </div>
 
@@ -757,13 +789,9 @@ export const SettingsPage: React.FC = () => {
                   <button
                     type="button"
                     aria-pressed={draftSettings.appearance.theme === 'light'}
-                    onClick={() =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        appearance: { ...prev.appearance, theme: 'light' },
-                      }))
-                    }
-                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    onClick={() => handleAppearanceChange({ ...draftSettings.appearance, theme: 'light' })}
+                    disabled={!isAppearanceLoaded}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6D28D9] ${
                       draftSettings.appearance.theme === 'light'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
@@ -771,9 +799,11 @@ export const SettingsPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between mb-2">
                       <Sun className="w-5 h-5 text-[#6D28D9]" />
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669]">
-                        Current Default
-                      </span>
+                      {draftSettings.appearance.theme === 'light' && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669]">
+                          Selected
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs font-bold text-[#1E1B4B]">Light Mode</p>
                     <p className="text-[11px] text-[#64748B] mt-0.5">
@@ -784,19 +814,22 @@ export const SettingsPage: React.FC = () => {
                   {/* Dark Theme */}
                   <button
                     type="button"
-                    disabled
-                    aria-pressed={false}
-                    className={`p-4 rounded-xl border-2 cursor-not-allowed opacity-60 transition-all ${
+                    aria-pressed={draftSettings.appearance.theme === 'dark'}
+                    onClick={() => handleAppearanceChange({ ...draftSettings.appearance, theme: 'dark' })}
+                    disabled={!isAppearanceLoaded}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6D28D9] ${
                       draftSettings.appearance.theme === 'dark'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Moon className="w-5 h-5 text-[#64748B]" />
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#F1F5F9] text-[#64748B]">
-                        Staging Preview
-                      </span>
+                      <Moon className="w-5 h-5 text-[#6D28D9]" />
+                      {draftSettings.appearance.theme === 'dark' && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669]">
+                          Selected
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs font-bold text-[#1E1B4B]">Dark Mode</p>
                     <p className="text-[11px] text-[#64748B] mt-0.5">
@@ -807,16 +840,22 @@ export const SettingsPage: React.FC = () => {
                   {/* System Theme */}
                   <button
                     type="button"
-                    disabled
-                    aria-pressed={false}
-                    className={`p-4 rounded-xl border-2 cursor-not-allowed opacity-60 transition-all ${
+                    aria-pressed={draftSettings.appearance.theme === 'system'}
+                    onClick={() => handleAppearanceChange({ ...draftSettings.appearance, theme: 'system' })}
+                    disabled={!isAppearanceLoaded}
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#6D28D9] ${
                       draftSettings.appearance.theme === 'system'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
-                      <Laptop className="w-5 h-5 text-[#64748B]" />
+                      <Laptop className="w-5 h-5 text-[#6D28D9]" />
+                      {draftSettings.appearance.theme === 'system' && (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#ECFDF5] text-[#059669]">
+                          Selected
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs font-bold text-[#1E1B4B]">System Auto</p>
                     <p className="text-[11px] text-[#64748B] mt-0.5">
@@ -826,11 +865,10 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Informational notice about dark mode implementation */}
               <div className="bg-[#F8F7FC] border border-[#E2E8F0] rounded-xl p-3.5 text-xs text-[#64748B] flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-[#6D28D9] shrink-0 mt-0.5" />
                 <p>
-                  Light theme and comfortable density are currently the only supported display settings. Other options are disabled because application-wide rendering support is not available.
+                  Appearance is saved separately for each signed-in account in this browser. System Auto follows your device’s light or dark preference and updates when it changes.
                 </p>
               </div>
 
@@ -841,7 +879,7 @@ export const SettingsPage: React.FC = () => {
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                   <label
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border-2 transition-all ${
+                    className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                       draftSettings.appearance.density === 'comfortable'
                         ? 'border-[#6D28D9] bg-[#F5F3FF]'
                         : 'border-[#E2E8F0] bg-white hover:border-slate-300'
@@ -852,12 +890,7 @@ export const SettingsPage: React.FC = () => {
                       name="density"
                       value="comfortable"
                       checked={draftSettings.appearance.density === 'comfortable'}
-                      onChange={() =>
-                        setDraftSettings((prev) => ({
-                          ...prev,
-                          appearance: { ...prev.appearance, density: 'comfortable' },
-                        }))
-                      }
+                      onChange={() => handleAppearanceChange({ ...draftSettings.appearance, density: 'comfortable' })}
                       className="mt-0.5 text-[#6D28D9] focus:ring-[#6D28D9]"
                     />
                     <div>
@@ -879,14 +912,8 @@ export const SettingsPage: React.FC = () => {
                       type="radio"
                       name="density"
                       value="compact"
-                      disabled
                       checked={draftSettings.appearance.density === 'compact'}
-                      onChange={() =>
-                        setDraftSettings((prev) => ({
-                          ...prev,
-                          appearance: { ...prev.appearance, density: 'compact' },
-                        }))
-                      }
+                      onChange={() => handleAppearanceChange({ ...draftSettings.appearance, density: 'compact' })}
                       className="mt-0.5 text-[#6D28D9] focus:ring-[#6D28D9]"
                     />
                     <div>
@@ -901,9 +928,13 @@ export const SettingsPage: React.FC = () => {
 
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#F1F5F9]">
+                <span className="mr-auto text-xs text-[#64748B]" aria-live="polite">
+                  {appearanceHasChanges ? 'Unsaved changes' : 'All changes saved'}
+                </span>
                 <button
                   type="button"
                   onClick={handleCancel}
+                  disabled={!appearanceHasChanges || isSaving}
                   className="px-4 py-2 rounded-lg border border-[#E2E8F0] text-xs font-medium text-[#475569] hover:bg-slate-50 transition-colors"
                 >
                   Cancel
@@ -911,7 +942,7 @@ export const SettingsPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSave}
-                  disabled={isSaving || settingsLoading}
+                  disabled={isSaving || settingsLoading || !isAppearanceLoaded || !appearanceHasChanges}
                   className="px-5 py-2 rounded-lg bg-[#6D28D9] hover:bg-[#5B21B6] text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all"
                 >
                   {isSaving ? 'Saving…' : 'Save Appearance'}

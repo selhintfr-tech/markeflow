@@ -14,10 +14,17 @@ export const BudgetUtilizationCard: React.FC<BudgetUtilizationCardProps> = ({
   selectedPeriod,
 }) => {
   const spent = Number(
-    overview?.campaign_financials?.spend ?? overview?.finance?.expenses ?? 0
+    overview?.advertising?.workspace_total_spend ??
+    overview?.advertising?.spend ??
+    overview?.campaign_financials?.spend ??
+    overview?.finance?.expenses ??
+    0
   );
   const allocated = Number(
-    overview?.campaign_financials?.budget ?? overview?.finance?.budgeted_expenses ?? 0
+    overview?.advertising?.budget ??
+    overview?.campaign_financials?.budget ??
+    overview?.finance?.budgeted_expenses ??
+    0
   );
 
   const percentage = allocated > 0 ? Math.round((spent / allocated) * 100) : 0;
@@ -30,7 +37,7 @@ export const BudgetUtilizationCard: React.FC<BudgetUtilizationCardProps> = ({
   const cappedPercentage = Math.min(percentage, 100);
   const strokeDashoffset = circumference - (cappedPercentage / 100) * circumference;
 
-  const hasData = Boolean(overview?.campaign_financials || overview?.finance);
+  const hasData = Boolean(overview?.advertising || overview?.campaign_financials || overview?.finance);
 
   return (
     <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-xs flex flex-col justify-between min-h-[360px] relative">
@@ -47,7 +54,7 @@ export const BudgetUtilizationCard: React.FC<BudgetUtilizationCardProps> = ({
             Budget utilization
           </h2>
           <p className="text-xs text-[#64748B] mt-0.5">
-            Overall spend across workspace campaigns.
+            Recorded advertising spend vs allocated budget.
           </p>
         </div>
 
@@ -101,7 +108,7 @@ export const BudgetUtilizationCard: React.FC<BudgetUtilizationCardProps> = ({
         <div>
           <span className="text-xs text-[#64748B] block">Spent</span>
           <span className="text-base font-bold text-[#1E1B4B]">
-            {hasData ? `${spent.toLocaleString()} ${currency}` : '—'}
+            {hasData ? `${spent.toLocaleString(undefined, { minimumFractionDigits: spent % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })} ${currency}` : '—'}
           </span>
         </div>
         <div className="text-right">

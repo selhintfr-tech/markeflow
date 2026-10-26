@@ -1,7 +1,22 @@
-﻿import { test, describe } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { initialTasks, teamMembers } from "../src/features/tasks/tasksData.ts";
-import { initialCampaignsList } from "../src/features/campaigns/campaignsData.ts";
+
+const initialTasks = [
+  { id: "t1", title: "Creative direction review", project: "Brand Refresh", description: "Review creative assets", status: "In Progress", priority: "High", workspaceId: "ws-atlas-retail", assignee: { id: "u1", name: "Sarah Connor" } },
+  { id: "t2", title: "Copywriting for ad launch", project: "Autumn Launch 2026", description: "Finalize copy text", status: "Completed", priority: "Medium", workspaceId: "ws-atlas-retail", assignee: { id: "u2", name: "John Doe" } },
+  { id: "t3", title: "Final invoice audit", project: "Finance Operations", description: "Audit Q3 expenses", status: "Overdue", priority: "Low", workspaceId: "ws-atlas-retail", assignee: { id: "u1", name: "Sarah Connor" } },
+];
+
+const teamMembers = [
+  { id: "u1", name: "Sarah Connor" },
+  { id: "u2", name: "John Doe" },
+];
+
+const initialCampaignsList = [
+  { id: "autumn-launch-2026", name: "Autumn Launch 2026", workspaceId: "ws-atlas-retail", adBudget: 7500, adSpend: 5400, revenue: 13400, leads: 180, customers: 60, acquiredCustomers: 60 },
+  { id: "october-retargeting", name: "October Retargeting", workspaceId: "ws-atlas-retail", adBudget: 3500, adSpend: 0, revenue: 0, leads: 0, customers: 0 },
+  { id: "c3", name: "Solis Solar Promo", workspaceId: "ws-solis-energy", adBudget: 8000, adSpend: 3000, revenue: 9000, leads: 50, customers: 10 },
+];
 
 /**
  * Task transformations & filtering logic

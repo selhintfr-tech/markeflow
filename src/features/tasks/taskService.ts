@@ -12,7 +12,7 @@ export interface TaskRecord {
   description: string | null;
   status: TaskStatus;
   priority: TaskPriority;
-  due_date: string;
+  due_date: string | null;
   project?: { id: string; name: string } | null;
   campaign?: { id: string; name: string } | null;
   assignee?: { id: number; name: string; email: string } | null;
@@ -20,18 +20,26 @@ export interface TaskRecord {
   updated_at: string;
 }
 
-export type TaskInput = Pick<TaskRecord, 'title' | 'due_date'> &
-  Partial<Pick<TaskRecord, 'project_id' | 'campaign_id' | 'assignee_id' | 'description' | 'status' | 'priority'>>;
+export type TaskInput = Pick<TaskRecord, 'title'> &
+  Partial<Pick<TaskRecord, 'due_date' | 'project_id' | 'campaign_id' | 'assignee_id' | 'description' | 'status' | 'priority'>>;
 
 export const taskService = {
-  async list(workspaceId: string, params: { search?: string; status?: string; priority?: string; project_id?: string; assignee_id?: number } = {}): Promise<TaskRecord[]> {
+  async list(
+    workspaceId: string,
+    params: { search?: string; status?: string; priority?: string; project_id?: string; assignee_id?: number } = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<TaskRecord[]> {
     const query = new URLSearchParams({ per_page: '100', page: '1' });
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== '') query.set(key, String(value));
     }
     const records: TaskRecord[] = [];
     while (true) {
-      const result = await apiRequest<ApiCollection<TaskRecord>>(`/api/tasks?${query}`, { workspaceId });
+      const result = await apiRequest<ApiCollection<TaskRecord>>(`/api/tasks?${query}`, {
+        workspaceId,
+        cacheTtlMs: 10_000,
+        signal: options.signal,
+      });
       records.push(...result.data);
       if (!result.meta || Number(query.get('page')) >= result.meta.last_page) break;
       query.set('page', String(Number(query.get('page')) + 1));

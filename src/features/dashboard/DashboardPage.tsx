@@ -135,19 +135,41 @@ export const DashboardPage: React.FC = () => {
 
   // Derive top KPI metric values safely
   const activeCampaignsCount = campaigns.filter((campaign) => campaign.status === 'Active').length;
+  const plannedCampaignsCount = campaigns.filter((campaign) => campaign.status === 'Planned').length;
   const campaignChange = getPercentageChange(timeSeries?.series.campaigns);
   const spendChange = getPercentageChange(timeSeries?.series.expenses);
 
-  const spendRaw =
+  // Workspace-wide recorded advertising spend from finance transactions (includes unattributed ad spend)
+  const workspaceAdSpend =
+    overview?.advertising?.workspace_total_spend ??
+    overview?.advertising?.spend ??
+    null;
+
+  const campaignSpendRaw =
     overview?.campaign_financials?.spend !== undefined && overview?.campaign_financials?.spend !== null
       ? Number(overview.campaign_financials.spend)
-      : overview?.finance?.expenses !== undefined && overview?.finance?.expenses !== null
+      : null;
+
+  const financeExpensesRaw =
+    overview?.finance?.expenses !== undefined && overview?.finance?.expenses !== null
       ? Number(overview.finance.expenses)
       : null;
 
+  const spendRaw =
+    workspaceAdSpend !== null
+      ? workspaceAdSpend
+      : campaignSpendRaw !== null
+      ? campaignSpendRaw
+      : financeExpensesRaw;
+
+  // Actual recorded advertising budget
   const budgetRaw =
-    overview?.campaign_financials?.budget !== undefined && overview?.campaign_financials?.budget !== null
+    overview?.advertising?.budget !== undefined && overview?.advertising?.budget !== null
+      ? Number(overview.advertising.budget)
+      : overview?.campaign_financials?.budget !== undefined && overview?.campaign_financials?.budget !== null
       ? Number(overview.campaign_financials.budget)
+      : overview?.finance?.budgeted_expenses !== undefined && overview?.finance?.budgeted_expenses !== null
+      ? Number(overview.finance.budgeted_expenses)
       : null;
 
   const leadsRaw =
@@ -158,16 +180,12 @@ export const DashboardPage: React.FC = () => {
   const conversionRate = overview?.crm?.conversion_rate ?? 0;
   const convertedLeads = overview?.crm?.converted_leads ?? 0;
 
-  // Profit calculation: campaign revenue - spend, or finance profit
+  // Profit calculation:
+  // Campaign profit reflects campaign revenue minus spend (0 when sales orders/revenue are not attributed to campaigns).
   let profitRaw: number | null = null;
-  if (
-    overview?.campaign_financials?.revenue !== undefined &&
-    overview?.campaign_financials?.revenue !== null &&
-    overview?.campaign_financials?.spend !== undefined &&
-    overview?.campaign_financials?.spend !== null
-  ) {
+  if (overview?.campaign_financials) {
     profitRaw = Math.round(
-      Number(overview.campaign_financials.revenue) - Number(overview.campaign_financials.spend)
+      Number(overview.campaign_financials.revenue || 0) - Number(overview.campaign_financials.spend || 0)
     );
   } else if (overview?.finance?.profit !== undefined && overview?.finance?.profit !== null) {
     profitRaw = Math.round(overview.finance.profit);
@@ -311,8 +329,18 @@ export const DashboardPage: React.FC = () => {
           iconBgColor="bg-[#F5F3FF]"
           title="Active Campaigns"
           value={loading ? '...' : activeCampaignsCount}
-          changePercentage={campaignChange ?? 0}
-          changeLabel={campaignChange === null ? 'trend unavailable' : 'vs previous data point'}
+          changePercentage={activeCampaignsCount > 0 ? (campaignChange ?? null) : null}
+          changeLabel={
+            activeCampaignsCount === 0
+              ? plannedCampaignsCount > 0
+                ? `${plannedCampaignsCount} planned campaign${plannedCampaignsCount > 1 ? 's' : ''}`
+                : campaigns.length > 0
+                ? `${campaigns.length} total (none active)`
+                : 'no campaigns created'
+              : campaignChange === null
+              ? 'trend unavailable'
+              : 'vs previous data point'
+          }
           onClick={() => navigate('/campaigns')}
         />
         <StatCard
@@ -323,15 +351,19 @@ export const DashboardPage: React.FC = () => {
             loading
               ? '...'
               : spendRaw !== null
-              ? `${spendRaw.toLocaleString()} MAD`
+              ? `${spendRaw.toLocaleString(undefined, { minimumFractionDigits: spendRaw % 1 !== 0 ? 2 : 0, maximumFractionDigits: 2 })} MAD`
               : '—'
           }
-          changePercentage={spendChange ?? 0}
+          changePercentage={spendChange ?? null}
           changeLabel={
-            spendChange === null
+            budgetRaw
+              ? overview?.advertising?.unattributed_spend && overview.advertising.unattributed_spend > 0 && (!overview.advertising.attributed_spend || overview.advertising.attributed_spend === 0)
+                ? `of ${budgetRaw.toLocaleString()} MAD budget (unattributed)`
+                : `of ${budgetRaw.toLocaleString()} MAD budget`
+              : overview?.advertising?.unattributed_spend && overview.advertising.unattributed_spend > 0
+              ? 'recorded in finance (unattributed)'
+              : spendChange === null
               ? 'trend unavailable'
-              : budgetRaw
-              ? `of ${budgetRaw.toLocaleString()} MAD budget`
               : 'vs previous data point'
           }
           onClick={() => navigate('/finance/budget')}
@@ -356,9 +388,11 @@ export const DashboardPage: React.FC = () => {
           iconBgColor="bg-[#CCFBF1]/40"
           title="Leads Generated"
           value={loading ? '...' : leadsRaw !== null ? leadsRaw : '—'}
-          changePercentage={conversionRate}
+          changePercentage={conversionRate > 0 ? conversionRate : null}
           changeLabel={
-            conversionRate > 0
+            leadsRaw === null || leadsRaw === 0
+              ? '0 leads in CRM • attribution unavailable'
+              : conversionRate > 0
               ? `conversion rate (${convertedLeads} converted)`
               : 'leads in CRM'
           }
@@ -386,14 +420,14 @@ export const DashboardPage: React.FC = () => {
             loading
               ? '...'
               : profitRaw !== null
-              ? `${profitRaw >= 0 ? '+' : ''}${profitRaw.toLocaleString()} MAD`
-              : '—'
+              ? `${profitRaw > 0 ? '+' : ''}${profitRaw.toLocaleString()} MAD`
+              : '0 MAD'
           }
-          changePercentage={returnOnSpend ? Math.round(returnOnSpend * 100) : 0}
+          changePercentage={returnOnSpend ? Math.round(returnOnSpend * 100) : null}
           changeLabel={
             returnOnSpend
               ? `${returnOnSpend}x return on spend`
-              : 'recorded net profit'
+              : 'attribution unavailable (orders not linked to campaign)'
           }
           onClick={() => navigate('/analytics')}
         />

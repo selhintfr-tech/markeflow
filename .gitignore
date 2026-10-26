@@ -44,8 +44,20 @@ auth.json
 *.backup-*
 *.sql
 *.dump
+*.sqlite
+*.sqlite-journal
+*.db
 
-# Temporary files
+# Temporary files and logs
 *.tmp
 *.temp
 Thumbs.db
+backend/storage/logs/*
+!backend/storage/logs/.gitignore
+backend/storage/framework/cache/*
+!backend/storage/framework/cache/.gitignore
+backend/storage/framework/sessions/*
+!backend/storage/framework/sessions/.gitignore
+backend/storage/framework/views/*
+!backend/storage/framework/views/.gitignore
+

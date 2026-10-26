@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   Home,
@@ -22,8 +22,12 @@ import {
   Settings,
   Truck,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
+import { useWorkspace } from '../../context/WorkspaceContext';
+import { prefetchRoute } from '../../app/routes/routePrefetch';
 
 interface NavItem {
   label: string;
@@ -37,17 +41,15 @@ interface NavSection {
 }
 
 interface AppSidebarProps {
-  isMobileOpen?: boolean;
-  onCloseMobile?: () => void;
+  isMobileOpen: boolean;
+  onCloseMobile: () => void;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  mobileMenuButtonRef: React.RefObject<HTMLButtonElement | null>;
 }
 
 const navSections: NavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { label: 'Dashboard', to: '/', icon: Home },
-    ],
-  },
+  { title: 'Overview', items: [{ label: 'Dashboard', to: '/', icon: Home }] },
   {
     title: 'Management',
     items: [
@@ -78,12 +80,7 @@ const navSections: NavSection[] = [
       { label: 'Comparisons', to: '/comparisons', icon: ArrowLeftRight },
     ],
   },
-  {
-    title: 'System',
-    items: [
-      { label: 'Archive', to: '/archive', icon: Archive },
-    ],
-  },
+  { title: 'System', items: [{ label: 'Archive', to: '/archive', icon: Archive }] },
   {
     title: 'Settings / Integrations',
     items: [
@@ -94,108 +91,183 @@ const navSections: NavSection[] = [
   },
 ];
 
-export const AppSidebar: React.FC<AppSidebarProps> = ({ isMobileOpen = false, onCloseMobile }) => {
+export const AppSidebar: React.FC<AppSidebarProps> = ({
+  isMobileOpen,
+  onCloseMobile,
+  isCollapsed,
+  onToggleCollapse,
+  mobileMenuButtonRef,
+}) => {
   const location = useLocation();
+  const { currentWorkspace } = useWorkspace();
+  const sidebarRef = useRef<HTMLElement>(null);
+  const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const wasMobileOpen = useRef(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => window.matchMedia('(max-width: 1023px)').matches,
+  );
+  const desktopCollapsed = isCollapsed && !isMobileViewport;
 
-  // Close on Escape key press on mobile
   useEffect(() => {
-    if (!isMobileOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onCloseMobile?.();
+    const media = window.matchMedia('(max-width: 1023px)');
+    const updateViewport = () => {
+      setIsMobileViewport(media.matches);
+      if (!media.matches) onCloseMobile();
+    };
+    media.addEventListener('change', updateViewport);
+    return () => media.removeEventListener('change', updateViewport);
+  }, [onCloseMobile]);
+
+  useEffect(() => {
+    if (!isMobileOpen || !isMobileViewport) {
+      if (wasMobileOpen.current && isMobileViewport) mobileMenuButtonRef.current?.focus();
+      wasMobileOpen.current = false;
+      return;
+    }
+
+    wasMobileOpen.current = true;
+    mobileCloseButtonRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseMobile();
+        return;
+      }
+
+      if (event.key !== 'Tab' || !sidebarRef.current) return;
+      const focusable = Array.from(
+        sidebarRef.current.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled])',
+        ),
+      ).filter((element) => element.tabIndex !== -1 && element.getClientRects().length > 0);
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+
+      if (event.shiftKey && (document.activeElement === first || !sidebarRef.current.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !sidebarRef.current.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isMobileOpen, onCloseMobile]);
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isMobileOpen, isMobileViewport, mobileMenuButtonRef, onCloseMobile]);
 
   return (
     <>
-      {/* Mobile Backdrop Overlay */}
-      {isMobileOpen && (
-        <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+      {isMobileOpen && isMobileViewport && (
+        <button
+          type="button"
+          className="app-sidebar-backdrop fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-[1px] lg:hidden"
           onClick={onCloseMobile}
-          aria-hidden="true"
+          aria-label="Close navigation menu"
+          tabIndex={-1}
         />
       )}
 
-      {/* Sidebar Container */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 min-w-[16rem] bg-white border-r border-[#E2E8F0] flex flex-col h-screen transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 shrink-0 ${
-          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:shadow-none'
-        }`}
-        aria-label="Main Navigation"
+        ref={sidebarRef}
+        id="app-sidebar"
+        className={`app-sidebar fixed inset-y-0 left-0 z-50 flex h-dvh shrink-0 flex-col border-r transition-[width,transform] duration-300 ease-in-out lg:sticky lg:top-0 lg:translate-x-0 ${
+          desktopCollapsed ? 'app-sidebar-is-collapsed' : 'app-sidebar-is-expanded'
+        } ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full shadow-none'}`}
+        aria-label="Main navigation"
+        aria-hidden={!isMobileOpen && isMobileViewport}
+        aria-modal={isMobileOpen && isMobileViewport ? true : undefined}
+        role={isMobileOpen && isMobileViewport ? 'dialog' : undefined}
+        data-collapsed={desktopCollapsed}
       >
-        {/* Brand Header */}
-        <div className="h-16 px-6 flex items-center justify-between border-b border-[#E2E8F0]">
-          <Logo />
-          {/* Mobile Close Button */}
+        <div className={`app-sidebar-brand flex h-16 shrink-0 items-center border-b ${desktopCollapsed ? 'justify-center px-2' : 'justify-between px-5'}`}>
+          {desktopCollapsed && <span className="sr-only">MarketFlow</span>}
+          <Logo className={`sidebar-logo h-8 w-auto ${desktopCollapsed ? 'sidebar-logo-collapsed' : ''}`} />
           <button
+            ref={mobileCloseButtonRef}
             type="button"
             onClick={onCloseMobile}
-            className="lg:hidden p-1.5 rounded-lg text-[#64748B] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
+            className="app-sidebar-mobile-close rounded-lg p-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 lg:hidden"
             aria-label="Close navigation menu"
+            tabIndex={isMobileViewport && !isMobileOpen ? -1 : 0}
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="app-sidebar-collapse hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 lg:flex"
+            aria-label={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!desktopCollapsed}
+            aria-controls="app-sidebar-navigation"
+            title={desktopCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {desktopCollapsed
+              ? <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              : <ChevronLeft className="h-4 w-4" aria-hidden="true" />}
           </button>
         </div>
 
-        {/* Navigation Sections */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
-          {navSections.map((section) => (
-            <div key={section.title}>
-              <div className="px-3 pb-2 text-[11px] font-semibold text-[#94A3B8] uppercase tracking-wider">
-                {section.title}
+        <div
+          id="app-sidebar-navigation"
+          className="app-sidebar-navigation min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4"
+          tabIndex={-1}
+        >
+          <div className="space-y-5">
+            {navSections.map((section) => (
+              <div key={section.title}>
+                <h2 className={`app-sidebar-section-heading mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                  desktopCollapsed ? 'sr-only' : ''
+                }`}>
+                  {section.title}
+                </h2>
+                <nav aria-label={section.title} className="space-y-1">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const isProjectsActive = item.to === '/projects' && location.pathname.startsWith('/projects');
+                    const isStrategiesActive = item.to === '/strategies' && location.pathname.startsWith('/strategies');
+                    const isSettingsActive = item.to === '/settings'
+                      && (location.pathname.startsWith('/settings') || location.pathname.startsWith('/profile'));
+                    const isCrmActive = item.to === '/crm' && location.pathname.startsWith('/crm');
+
+                    return (
+                      <NavLink
+                        key={item.label}
+                        to={item.to}
+                        end={item.to === '/'}
+                        onClick={onCloseMobile}
+                        onMouseEnter={() => prefetchRoute(item.to, currentWorkspace?.id)}
+                        onFocus={() => prefetchRoute(item.to, currentWorkspace?.id)}
+                        title={desktopCollapsed ? item.label : undefined}
+                        aria-label={item.label}
+                        tabIndex={!isMobileOpen && isMobileViewport ? -1 : undefined}
+                        className={({ isActive }) => {
+                          const active = isActive || isProjectsActive || isStrategiesActive || isSettingsActive || isCrmActive;
+                          return `app-sidebar-link group relative flex min-h-10 items-center rounded-lg text-sm font-medium transition-colors ${
+                            desktopCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                          }`
+                            + (active ? ' app-sidebar-link-active' : '');
+                        }}
+                      >
+                        {({ isActive }) => {
+                          const active = isActive || isProjectsActive || isStrategiesActive || isSettingsActive || isCrmActive;
+                          return (
+                            <>
+                              {active && <span className="app-sidebar-active-mark absolute inset-y-2 left-0 w-1 rounded-r-md" aria-hidden="true" />}
+                              <Icon className="app-sidebar-icon h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+                              <span className={desktopCollapsed ? 'sr-only' : 'truncate'}>{item.label}</span>
+                            </>
+                          );
+                        }}
+                      </NavLink>
+                    );
+                  })}
+                </nav>
               </div>
-              <nav className="space-y-1">
-                {section.items.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavLink
-                      key={item.label}
-                      to={item.to}
-                      end={item.to === '/'}
-                      onClick={() => onCloseMobile?.()}
-                      className={({ isActive }) => {
-                        const isProjectsActive = item.to === '/projects' && location.pathname.startsWith('/projects');
-                        const isStrategiesActive = item.to === '/strategies' && location.pathname.startsWith('/strategies');
-                        const isSettingsActive = item.to === '/settings' && (location.pathname.startsWith('/settings') || location.pathname.startsWith('/profile'));
-                        const active = isActive || isProjectsActive || isStrategiesActive || isSettingsActive;
-                        return `relative flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors group ${
-                          active
-                            ? 'bg-[#F5F3FF] text-[#6D28D9] font-semibold'
-                            : 'text-[#64748B] hover:text-[#1E1B4B] hover:bg-slate-50'
-                        }`;
-                      }}
-                    >
-                      {({ isActive }) => {
-                        const isProjectsActive = item.to === '/projects' && location.pathname.startsWith('/projects');
-                        const isStrategiesActive = item.to === '/strategies' && location.pathname.startsWith('/strategies');
-                        const isSettingsActive = item.to === '/settings' && (location.pathname.startsWith('/settings') || location.pathname.startsWith('/profile'));
-                        const active = isActive || isProjectsActive || isStrategiesActive || isSettingsActive;
-                        return (
-                          <>
-                            {active && (
-                              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 bg-[#6D28D9] rounded-r-md" />
-                            )}
-                            <Icon
-                              className={`w-4 h-4 shrink-0 transition-colors ${
-                                active
-                                  ? 'text-[#6D28D9]'
-                                  : 'text-[#94A3B8] group-hover:text-[#64748B]'
-                              }`}
-                            />
-                            <span className="truncate">{item.label}</span>
-                          </>
-                        );
-                      }}
-                    </NavLink>
-                  );
-                })}
-              </nav>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </aside>
     </>

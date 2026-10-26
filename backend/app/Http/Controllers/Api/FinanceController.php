@@ -90,6 +90,12 @@ class FinanceController extends Controller
             'category' => ['sometimes', 'string', 'max:100'],
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'campaign_id' => [
+                'sometimes',
+                'nullable',
+                'uuid',
+                Rule::exists('campaigns', 'id')->where('workspace_id', $this->tenantContext->getWorkspaceId()),
+            ],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
             'page' => ['sometimes', 'integer', 'min:1'],
         ]);
@@ -97,10 +103,12 @@ class FinanceController extends Controller
         return FinanceTransactionResource::collection(
             FinanceTransaction::query()
                 ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+                ->with('creator:id,name')
                 ->when($filters['type'] ?? null, fn ($query, string $type) => $query->where('type', $type))
                 ->when($filters['category'] ?? null, fn ($query, string $category) => $query->where('category', $category))
                 ->when($filters['from'] ?? null, fn ($query, string $date) => $query->whereDate('occurred_on', '>=', $date))
                 ->when($filters['to'] ?? null, fn ($query, string $date) => $query->whereDate('occurred_on', '<=', $date))
+                ->when($filters['campaign_id'] ?? null, fn ($query, string $id) => $query->where('campaign_id', $id))
                 ->orderByDesc('occurred_on')
                 ->orderByDesc('created_at')
                 ->paginate($filters['per_page'] ?? 15)
@@ -111,7 +119,25 @@ class FinanceController extends Controller
     public function storeTransaction(StoreTransactionRequest $request)
     {
         $this->access->authorize($request->user(), true);
-        $transaction = new FinanceTransaction($request->validated());
+        $data = $request->validated();
+
+        if (! empty($data['order_id'])) {
+            $duplicate = FinanceTransaction::query()
+                ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+                ->where('order_id', $data['order_id'])
+                ->where('type', $data['type'])
+                ->where('category', $data['category'])
+                ->exists();
+
+            if ($duplicate) {
+                return response()->json([
+                    'message' => "A {$data['type']} transaction for category '{$data['category']}' has already been recorded for this order to prevent double-counting.",
+                    'errors' => ['order_id' => ["This order already has a {$data['type']} transaction under category '{$data['category']}'."]],
+                ], 422);
+            }
+        }
+
+        $transaction = new FinanceTransaction($data);
         $transaction->workspace_id = $this->tenantContext->getWorkspaceId();
         $transaction->created_by = $request->user()->id;
         $transaction->save();
@@ -160,43 +186,74 @@ class FinanceController extends Controller
         $filters = $request->validate([
             'from' => ['sometimes', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'campaign_id' => [
+                'sometimes',
+                'nullable',
+                'uuid',
+                Rule::exists('campaigns', 'id')->where('workspace_id', $this->tenantContext->getWorkspaceId()),
+            ],
         ]);
         $workspaceId = $this->tenantContext->getWorkspaceId();
 
         $transactions = FinanceTransaction::query()
             ->where('workspace_id', $workspaceId)
             ->when($filters['from'] ?? null, fn ($query, string $date) => $query->whereDate('occurred_on', '>=', $date))
-            ->when($filters['to'] ?? null, fn ($query, string $date) => $query->whereDate('occurred_on', '<=', $date));
+            ->when($filters['to'] ?? null, fn ($query, string $date) => $query->whereDate('occurred_on', '<=', $date))
+            ->when($filters['campaign_id'] ?? null, fn ($query, string $id) => $query->where('campaign_id', $id));
         $totals = (clone $transactions)
             ->selectRaw('type, SUM(amount) as total')
             ->groupBy('type')
             ->pluck('total', 'type');
 
-        $budgets = FinanceBudget::query()
+        $budgetModels = FinanceBudget::query()
             ->where('workspace_id', $workspaceId)
             ->when($filters['from'] ?? null, fn ($query, string $date) => $query->whereDate('ends_on', '>=', $date))
             ->when($filters['to'] ?? null, fn ($query, string $date) => $query->whereDate('starts_on', '<=', $date))
             ->orderBy('category')
-            ->get()
-            ->map(function (FinanceBudget $budget) use ($filters): array {
-                $actualQuery = FinanceTransaction::query()
-                    ->where('workspace_id', $budget->workspace_id)
-                    ->where('type', FinanceTransaction::TYPE_EXPENSE)
-                    ->where('category', $budget->category)
-                    ->whereDate('occurred_on', '>=', max($budget->starts_on->toDateString(), $filters['from'] ?? $budget->starts_on->toDateString()))
-                    ->whereDate('occurred_on', '<=', min($budget->ends_on->toDateString(), $filters['to'] ?? $budget->ends_on->toDateString()));
-                $actuals = $actualQuery
-                    ->selectRaw('COALESCE(SUM(amount), 0) as actual, CAST(? AS DECIMAL(14,2)) - COALESCE(SUM(amount), 0) as variance', [$budget->amount])
-                    ->first();
+            ->get();
+
+        if ($budgetModels->isEmpty()) {
+            $budgets = [];
+        } else {
+            $categories = $budgetModels->pluck('category')->unique()->all();
+            $minStart = $budgetModels->min(fn ($b) => max($b->starts_on->toDateString(), $filters['from'] ?? $b->starts_on->toDateString()));
+            $maxEnd = $budgetModels->max(fn ($b) => min($b->ends_on->toDateString(), $filters['to'] ?? $b->ends_on->toDateString()));
+
+            $rawTransactions = FinanceTransaction::query()
+                ->where('workspace_id', $workspaceId)
+                ->where('type', FinanceTransaction::TYPE_EXPENSE)
+                ->whereIn('category', $categories)
+                ->whereDate('occurred_on', '>=', $minStart)
+                ->whereDate('occurred_on', '<=', $maxEnd)
+                ->get(['category', 'amount', 'occurred_on']);
+
+            $budgets = $budgetModels->map(function (FinanceBudget $budget) use ($filters, $rawTransactions): array {
+                $bStart = max($budget->starts_on->toDateString(), $filters['from'] ?? $budget->starts_on->toDateString());
+                $bEnd = min($budget->ends_on->toDateString(), $filters['to'] ?? $budget->ends_on->toDateString());
+
+                $actualSum = 0.0;
+                foreach ($rawTransactions as $tx) {
+                    if ($tx->category === $budget->category) {
+                        $occ = $tx->occurred_on?->toDateString();
+                        if ($occ !== null && $occ >= $bStart && $occ <= $bEnd) {
+                            $actualSum += (float) $tx->amount;
+                        }
+                    }
+                }
+
+                $budgetAmount = (string) $budget->amount;
+                $budgetFloat = (float) $budget->amount;
+                $variance = round($budgetFloat - $actualSum, 2);
 
                 return [
                     'budget_id' => $budget->id,
                     'category' => $budget->category,
-                    'budget' => $budget->amount,
-                    'actual' => $actuals->actual,
-                    'variance' => $actuals->variance,
+                    'budget' => $budgetAmount,
+                    'actual' => round($actualSum, 2),
+                    'variance' => $variance,
                 ];
             });
+        }
 
         return response()->json([
             'data' => [

@@ -159,7 +159,7 @@ export interface ProjectDetail {
   dateRange: string;
   executiveSummary: string;
   objectives: string[];
-  progressPercentage: number;
+  progressPercentage: number | null;
   completedTasksCount: number;
   totalTasksCount: number;
   achievedMilestonesCount: number;
@@ -192,7 +192,7 @@ export interface StrategyMeasurableObjective {
   kpi: string;
   target: string;
   currentProgressText: string;
-  progressPercentage: number;
+  progressPercentage: number | null;
   owner: {
     name: string;
     initials: string;
@@ -213,7 +213,7 @@ export interface StrategicInitiative {
   id: string;
   name: string;
   relatedArea: string;
-  status: 'In progress' | 'Active' | 'Planned' | 'In review';
+  status: 'In progress' | 'Active' | 'Planned' | 'In review' | 'Completed';
   owner: {
     name: string;
     initials: string;
@@ -232,9 +232,9 @@ export interface StrategyDetail {
   period: string;
   overviewDescription: string;
   audiences: StrategyAudienceItem[];
-  completionPercentage: number;
-  objectivesOnTrack: number;
-  objectivesTotal: number;
+  completionPercentage: number | null;
+  objectivesOnTrack: number | null;
+  objectivesTotal: number | null;
   channelsActive: number;
   channelsTotal: number;
   initiativesInProgressCount: number;
@@ -628,6 +628,4 @@ export interface MetricComparisonRow {
   isCost?: boolean;
   observation: string;
 }
-
-
 

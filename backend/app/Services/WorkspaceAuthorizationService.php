@@ -153,13 +153,44 @@ class WorkspaceAuthorizationService
     }
 
     /**
+     * In-memory cache for user memberships in workspaces within the request lifecycle.
+     *
+     * @var array<string, ?WorkspaceUser>
+     */
+    private array $memberships = [];
+
+    /**
      * Retrieve the user's membership in a workspace.
      */
     public function getMembership(User $user, Workspace $workspace): ?WorkspaceUser
     {
-        return WorkspaceUser::query()
+        $key = "{$user->id}:{$workspace->id}";
+        if (array_key_exists($key, $this->memberships)) {
+            return $this->memberships[$key];
+        }
+
+        if (app()->bound(TenantContext::class)) {
+            $contextMembership = app(TenantContext::class)->getMembership();
+            if (
+                $contextMembership
+                && $contextMembership->user_id === $user->id
+                && $contextMembership->workspace_id === $workspace->id
+            ) {
+                return $this->memberships[$key] = $contextMembership;
+            }
+        }
+
+        return $this->memberships[$key] = WorkspaceUser::query()
             ->where('workspace_id', $workspace->id)
             ->where('user_id', $user->id)
             ->first();
+    }
+
+    /**
+     * Clear the memoized membership cache.
+     */
+    public function clearCache(): void
+    {
+        $this->memberships = [];
     }
 }

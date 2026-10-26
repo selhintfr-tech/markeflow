@@ -13,6 +13,7 @@ class StoreReportRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'type' => ['required', 'string', Rule::in(SavedReport::TYPES)],
+            'status' => ['sometimes', 'required', 'string', Rule::in(SavedReport::STATUSES)],
             'from_date' => ['nullable', 'date_format:Y-m-d'],
             'to_date' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from_date'],
             'filters' => ['sometimes', 'array'],

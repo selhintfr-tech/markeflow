@@ -21,7 +21,7 @@ export const NotificationItem = ({ notification, onClick }: NotificationItemProp
     <button
       onClick={() => onClick(notification.id)}
       className={`w-full text-left p-4 border-b border-gray-100 transition-colors ${
-        notification.isRead ? 'bg-white hover:bg-gray-50' : 'bg-purple-50 hover:bg-purple-100'
+        notification.is_read ? 'bg-white hover:bg-gray-50' : 'bg-purple-50 hover:bg-purple-100'
       }`}
       type="button"
       aria-label={`${notification.title}: ${notification.description}`}
@@ -29,7 +29,7 @@ export const NotificationItem = ({ notification, onClick }: NotificationItemProp
       <div className="flex items-start gap-3">
         <div
           className={`flex-shrink-0 p-2 rounded-lg ${
-            notification.isRead ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-600'
+            notification.is_read ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-600'
           }`}
           aria-hidden="true"
         >
@@ -39,12 +39,12 @@ export const NotificationItem = ({ notification, onClick }: NotificationItemProp
           <div className="flex items-center gap-2">
             <p
               className={`text-sm font-medium truncate ${
-                notification.isRead ? 'text-gray-700' : 'text-gray-900'
+                notification.is_read ? 'text-gray-700' : 'text-gray-900'
               }`}
             >
               {notification.title}
             </p>
-            {!notification.isRead && (
+            {!notification.is_read && (
               <div
                 className="flex-shrink-0 w-2 h-2 rounded-full bg-purple-600"
                 aria-label="Unread"
@@ -54,7 +54,10 @@ export const NotificationItem = ({ notification, onClick }: NotificationItemProp
           <p className="text-sm text-gray-600 mt-1 line-clamp-2">
             {notification.description}
           </p>
-          <p className="text-xs text-gray-500 mt-2">{notification.timestamp}</p>
+          <p className="text-xs text-gray-500 mt-2">{new Intl.DateTimeFormat(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }).format(new Date(notification.created_at))}</p>
         </div>
       </div>
     </button>

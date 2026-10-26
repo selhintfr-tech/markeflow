@@ -1,8 +1,17 @@
-﻿import { test, describe } from "node:test";
+import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { initialCampaignFinancials } from "../src/features/finance/profitabilityData.ts";
-import { initialTasks } from "../src/features/tasks/tasksData.ts";
-import { initialCampaignsList } from "../src/features/campaigns/campaignsData.ts";
+
+const initialTasks = [
+  { id: "t1", title: "Creative direction review", workspaceId: "ws-atlas-retail" },
+  { id: "t2", title: "Copywriting for ad launch", workspaceId: "ws-atlas-retail" },
+  { id: "t3", title: "Solis Solar Task", workspaceId: "ws-solis-energy" },
+];
+
+const initialCampaignsList = [
+  { id: "c1", name: "Autumn Launch 2026", workspaceId: "ws-atlas-retail" },
+  { id: "c2", name: "Solis Promo", workspaceId: "ws-solis-energy" },
+];
 
 /**
  * Workspace isolation and multi-tenant scoping functions

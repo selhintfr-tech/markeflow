@@ -11,6 +11,8 @@ class AnalyticsRangeRequest extends FormRequest
         return [
             'from' => ['sometimes', 'required', 'date_format:Y-m-d'],
             'to' => ['sometimes', 'required', 'date_format:Y-m-d', 'after_or_equal:from'],
+            'campaign_id' => ['sometimes', 'nullable', 'string'],
+            'channel' => ['sometimes', 'nullable', 'string', 'max:100'],
         ];
     }
 }

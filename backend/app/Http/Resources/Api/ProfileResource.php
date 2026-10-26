@@ -22,7 +22,7 @@ class ProfileResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'job_title' => $this->job_title,
-            'avatar_url' => $this->avatar_url,
+            'avatar_url' => $this->avatarPublicUrl(),
             'timezone' => $this->timezone,
             'locale' => $this->locale,
             'created_at' => $this->created_at?->toISOString(),

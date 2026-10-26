@@ -1,160 +1,151 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import type { ReadStateMap, StorageSchema } from './notificationTypes';
-import { initialNotifications } from './notificationData';
-
-const STORAGE_VERSION = 1;
-const BASE_STORAGE_KEY = 'marketflow_notifications';
-
-const getStorageKey = (workspaceId?: string): string => {
-  return workspaceId
-    ? `${BASE_STORAGE_KEY}_${workspaceId}_v${STORAGE_VERSION}`
-    : `${BASE_STORAGE_KEY}_demo_v${STORAGE_VERSION}`;
-};
-
-const isValidReadStateMap = (value: unknown): value is ReadStateMap => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const map = value as Record<string, unknown>;
-  for (const key in map) {
-    if (typeof map[key] !== 'boolean') {
-      return false;
-    }
-  }
-  return true;
-};
-
-const isValidStorageSchema = (value: unknown): value is StorageSchema => {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const schema = value as StorageSchema;
-  return (
-    typeof schema.version === 'number' &&
-    schema.version === STORAGE_VERSION &&
-    isValidReadStateMap(schema.readStates)
-  );
-};
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { apiRequest } from '../../features/api/apiClient';
+import type { Notification, NotificationsResponse } from './notificationTypes';
 
 interface UseNotificationsOptions {
   workspaceId?: string;
+  userId?: string;
 }
 
 export const useNotifications = (options: UseNotificationsOptions = {}) => {
-  const { workspaceId } = options;
-  const storageKey = useMemo(() => getStorageKey(workspaceId), [workspaceId]);
-  const prevWorkspaceIdRef = useRef<string | undefined>(workspaceId);
+  const { workspaceId, userId } = options;
+  const contextKey = `${userId || ''}:${workspaceId || ''}`;
+  const contextKeyRef = useRef(contextKey);
+  const requestIdRef = useRef(0);
+  const [state, setState] = useState<{
+    contextKey: string;
+    notifications: Notification[];
+    unreadCount: number;
+    hasMore: boolean;
+    currentPage: number;
+    loading: boolean;
+    error: string | null;
+  }>({ contextKey, notifications: [], unreadCount: 0, hasMore: false, currentPage: 0, loading: false, error: null });
 
-  const [readStates, setReadStates] = useState<ReadStateMap>(() => {
-    // Initial load for the first workspace
+  const reload = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    contextKeyRef.current = contextKey;
+    if (!userId || !workspaceId) {
+      setState({ contextKey, notifications: [], unreadCount: 0, hasMore: false, currentPage: 0, loading: false, error: null });
+      return;
+    }
+    setState((current) => ({
+      contextKey,
+      notifications: current.contextKey === contextKey ? current.notifications : [],
+      unreadCount: current.contextKey === contextKey ? current.unreadCount : 0,
+      hasMore: current.contextKey === contextKey ? current.hasMore : false,
+      currentPage: current.contextKey === contextKey ? current.currentPage : 0,
+      loading: true,
+      error: null,
+    }));
     try {
-      if (typeof localStorage === 'undefined') {
-        return {};
-      }
-      const stored = localStorage.getItem(storageKey);
-      if (!stored) {
-        return {};
-      }
-      const parsed = JSON.parse(stored);
-      if (isValidStorageSchema(parsed)) {
-        return parsed.readStates;
-      }
-      console.warn('Invalid storage schema detected, using default state');
-      return {};
+      const response = await apiRequest<NotificationsResponse>('/api/notifications?per_page=20&page=1', {
+        workspaceId,
+        cacheTtlMs: 30_000,
+      });
+      if (requestId !== requestIdRef.current || contextKeyRef.current !== contextKey) return;
+      setState({
+        contextKey,
+        notifications: response.data,
+        unreadCount: response.meta.unread_count,
+        hasMore: response.meta.current_page < response.meta.last_page,
+        currentPage: response.meta.current_page,
+        loading: false,
+        error: null,
+      });
     } catch (error) {
-      console.warn('Failed to load notifications from localStorage:', error);
-      return {};
+      if (requestId !== requestIdRef.current || contextKeyRef.current !== contextKey) return;
+      setState({
+        contextKey,
+        notifications: [],
+        unreadCount: 0,
+        hasMore: false,
+        currentPage: 0,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Unable to load notifications.',
+      });
     }
-  });
+  }, [contextKey, userId, workspaceId]);
 
-  // Load read states when workspaceId changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps, react/set-state-in-effect
-  useEffect(() => {
-    if (workspaceId !== prevWorkspaceIdRef.current) {
-      prevWorkspaceIdRef.current = workspaceId;
-      
-      try {
-        if (typeof localStorage === 'undefined') {
-          setReadStates({});
-          return;
-        }
-        const stored = localStorage.getItem(storageKey);
-        if (!stored) {
-          setReadStates({});
-          return;
-        }
-        const parsed = JSON.parse(stored);
-        if (isValidStorageSchema(parsed)) {
-          setReadStates(parsed.readStates);
-        } else {
-          console.warn('Invalid storage schema detected, using default state');
-          setReadStates({});
-        }
-      } catch (error) {
-        console.warn('Failed to load notifications from localStorage:', error);
-        setReadStates({});
-      }
-    }
-  }, [storageKey, workspaceId]);
-
-  const notifications = useMemo(() => {
-    // In demo mode (no workspaceId), show demo notifications
-    // In workspace mode, show empty state (real data will come from backend)
-    if (!workspaceId) {
-      return initialNotifications.map((notification) => ({
-        ...notification,
-        isRead: readStates[notification.id] ?? notification.isRead,
+  const loadMore = useCallback(async () => {
+    if (!userId || !workspaceId || !state.hasMore || state.loading || state.contextKey !== contextKey) return;
+    const requestId = ++requestIdRef.current;
+    const nextPage = state.currentPage + 1;
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const response = await apiRequest<NotificationsResponse>(`/api/notifications?per_page=20&page=${nextPage}`, {
+        workspaceId,
+        cacheTtlMs: 30_000,
+      });
+      if (requestId !== requestIdRef.current || contextKeyRef.current !== contextKey) return;
+      setState((current) => {
+        if (current.contextKey !== contextKey) return current;
+        const existing = new Set(current.notifications.map((notification) => notification.id));
+        return {
+          ...current,
+          notifications: [...current.notifications, ...response.data.filter((notification) => !existing.has(notification.id))],
+          unreadCount: response.meta.unread_count,
+          hasMore: response.meta.current_page < response.meta.last_page,
+          currentPage: response.meta.current_page,
+          loading: false,
+          error: null,
+        };
+      });
+    } catch (error) {
+      if (requestId !== requestIdRef.current || contextKeyRef.current !== contextKey) return;
+      setState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Unable to load more notifications.',
       }));
     }
-    // Workspace-specific mode: no demo notifications, empty state will be shown
-    return [];
-  }, [readStates, workspaceId]);
-
-  const unreadCount = useMemo(() => {
-    return notifications.filter((n) => !n.isRead).length;
-  }, [notifications]);
-
-  const markAsRead = useCallback((id: string) => {
-    setReadStates((prev) => ({
-      ...prev,
-      [id]: true,
-    }));
-  }, []);
-
-  const markAllAsRead = useCallback(() => {
-    setReadStates((prev) => {
-      const newStates: ReadStateMap = {};
-      notifications.forEach((notification) => {
-        newStates[notification.id] = true;
-      });
-      return { ...prev, ...newStates };
-    });
-  }, [notifications]);
-
-  const resetNotifications = useCallback(() => {
-    setReadStates({});
-  }, []);
+  }, [contextKey, state, userId, workspaceId]);
 
   useEffect(() => {
-    try {
-      if (typeof localStorage === 'undefined') {
-        return;
-      }
-      const schema: StorageSchema = {
-        version: STORAGE_VERSION,
-        readStates,
-      };
-      localStorage.setItem(storageKey, JSON.stringify(schema));
-    } catch (error) {
-      console.warn('Failed to save notifications to localStorage:', error);
-    }
-  }, [storageKey, readStates]);
+    if (!userId || !workspaceId) return;
+    // Defer initial notification poll by 150ms so primary page metrics (overview, charts) take priority
+    const initialTimer = window.setTimeout(() => void reload(), 150);
+    const interval = window.setInterval(() => void reload(), 60_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+      requestIdRef.current += 1;
+    };
+  }, [reload, userId, workspaceId]);
+
+  const markAsRead = useCallback(async (id: string) => {
+    if (!workspaceId || !userId) return;
+    await apiRequest(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH', workspaceId });
+    await reload();
+  }, [reload, userId, workspaceId]);
+
+  const markAllAsRead = useCallback(async () => {
+    if (!workspaceId || !userId) return;
+    await apiRequest('/api/notifications/read-all', { method: 'POST', workspaceId });
+    await reload();
+  }, [reload, userId, workspaceId]);
+
+  const currentState = state.contextKey === contextKey
+    ? state
+    : {
+      contextKey,
+      notifications: [],
+      unreadCount: 0,
+      hasMore: false,
+      currentPage: 0,
+      loading: Boolean(userId && workspaceId),
+      error: null,
+    };
 
   return {
-    notifications,
-    unreadCount,
+    notifications: currentState.notifications,
+    unreadCount: currentState.unreadCount,
+    hasMore: currentState.hasMore,
+    loading: currentState.loading,
+    error: currentState.error,
     markAsRead,
     markAllAsRead,
-    resetNotifications,
+    reload,
+    loadMore,
   };
 };

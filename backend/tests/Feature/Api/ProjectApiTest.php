@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ProjectController;
 use App\Http\Middleware\EnsureTenantContext;
 use App\Http\Middleware\SetTenantContext;
 use App\Models\Project;
+use App\Models\ProjectMilestone;
 use App\Models\User;
 use App\Models\Workspace;
 use App\Models\WorkspaceUser;
@@ -32,6 +33,10 @@ class ProjectApiTest extends TestCase
                 Route::get('/{project}', [ProjectController::class, 'show']);
                 Route::put('/{project}', [ProjectController::class, 'update']);
                 Route::delete('/{project}', [ProjectController::class, 'destroy']);
+                Route::get('/{project}/milestones', [ProjectController::class, 'milestones']);
+                Route::post('/{project}/milestones', [ProjectController::class, 'storeMilestone']);
+                Route::patch('/{project}/milestones/{milestone}', [ProjectController::class, 'updateMilestone']);
+                Route::delete('/{project}/milestones/{milestone}', [ProjectController::class, 'destroyMilestone']);
             });
     }
 
@@ -60,7 +65,9 @@ class ProjectApiTest extends TestCase
         $this->withHeader('X-Workspace-Id', $workspace->id)
             ->getJson('/test-api/projects/'.$projectId)
             ->assertOk()
-            ->assertJsonPath('data.name', 'Launch planning');
+            ->assertJsonPath('data.name', 'Launch planning')
+            ->assertJsonPath('data.owner.id', $owner->id)
+            ->assertJsonPath('data.owner.name', $owner->name);
 
         $this->putJson('/test-api/projects/'.$projectId, [
             'end_date' => '2026-09-30',
@@ -157,6 +164,9 @@ class ProjectApiTest extends TestCase
             'start_date' => '2026-10-01',
             'end_date' => '2026-11-01',
         ])->assertForbidden();
+        $this->postJson('/test-api/projects/'.$project->id.'/milestones', [
+            'title' => 'Forbidden milestone',
+        ])->assertForbidden();
 
         $this->putJson('/test-api/projects/'.$project->id, ['name' => 'Forbidden update'])
             ->assertForbidden();
@@ -207,6 +217,78 @@ class ProjectApiTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_project_objectives_milestones_and_activity_are_persisted_and_workspace_scoped(): void
+    {
+        $owner = $this->createUser('project-details-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $otherOwner = $this->createUser('project-details-other@example.test');
+        $otherWorkspace = $this->createWorkspace($otherOwner);
+        $foreignProject = $this->createProject($otherWorkspace, $otherOwner, 'Foreign project');
+        $foreignMilestone = app(TenantContext::class)->runInContext($otherWorkspace, function () use ($otherWorkspace, $foreignProject, $otherOwner): ProjectMilestone {
+            $milestone = new ProjectMilestone([
+                'title' => 'Foreign milestone',
+                'status' => ProjectMilestone::STATUS_PLANNED,
+            ]);
+            $milestone->workspace_id = $otherWorkspace->id;
+            $milestone->project_id = $foreignProject->id;
+            $milestone->created_by = $otherOwner->id;
+            $milestone->save();
+
+            return $milestone;
+        });
+
+        $projectId = $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/projects/', [
+                'name' => 'Project with milestones',
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-11-01',
+                'objectives' => ['Increase qualified leads', 'Deliver launch assets'],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.objectives.0', 'Increase qualified leads')
+            ->json('data.id');
+
+        $milestoneId = $this->postJson('/test-api/projects/'.$projectId.'/milestones', [
+            'title' => 'Complete campaign brief',
+            'due_date' => '2026-10-25',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.workspace_id', $workspace->id)
+            ->assertJsonPath('data.project_id', $projectId)
+            ->assertJsonPath('data.status', ProjectMilestone::STATUS_PLANNED)
+            ->json('data.id');
+
+        $this->patchJson('/test-api/projects/'.$projectId.'/milestones/'.$milestoneId, [
+            'status' => ProjectMilestone::STATUS_COMPLETED,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', ProjectMilestone::STATUS_COMPLETED);
+
+        $this->getJson('/test-api/projects/'.$projectId)
+            ->assertOk()
+            ->assertJsonPath('data.objectives.1', 'Deliver launch assets')
+            ->assertJsonCount(1, 'data.milestones')
+            ->assertJsonPath('data.milestones.0.status', ProjectMilestone::STATUS_COMPLETED)
+            ->assertJsonPath('data.activities.0.action', 'project.milestone_updated');
+
+        $this->patchJson('/test-api/projects/'.$projectId.'/milestones/'.$foreignMilestone->id, [
+            'title' => 'Cross-tenant update',
+        ])->assertNotFound();
+
+        $this->assertDatabaseHas('project_milestones', [
+            'id' => $milestoneId,
+            'workspace_id' => $workspace->id,
+            'project_id' => $projectId,
+        ]);
+        $this->assertDatabaseHas('workspace_audit_logs', [
+            'workspace_id' => $workspace->id,
+            'entity_type' => 'project',
+            'entity_id' => $projectId,
+            'action' => 'project.milestone_updated',
+        ]);
+    }
+
     public function test_cross_workspace_projects_are_not_visible_or_mutable(): void
     {
         $firstOwner = $this->createUser('first-owner@example.test');
@@ -249,6 +331,55 @@ class ProjectApiTest extends TestCase
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['owner_id']);
+    }
+
+    public function test_deletion_blocked_when_project_has_linked_tasks_or_campaigns(): void
+    {
+        $owner = $this->createUser('protect-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Linked project', Project::STATUS_ACTIVE);
+
+        // Add a linked task
+        \Illuminate\Support\Facades\DB::table('tasks')->insert([
+            'id' => (string) \Illuminate\Support\Str::uuid(),
+            'workspace_id' => $workspace->id,
+            'project_id' => $project->id,
+            'title' => 'Critical marketing task',
+            'status' => 'Pending',
+            'created_by' => $owner->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->deleteJson('/test-api/projects/'.$project->id)
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'PROJECT_HAS_LINKED_RECORDS')
+            ->assertJsonPath('dependencies.tasks', 1);
+
+        $this->assertDatabaseHas('projects', ['id' => $project->id]);
+    }
+
+    public function test_viewer_cannot_delete_project(): void
+    {
+        $owner = $this->createUser('owner-del@example.test');
+        $viewer = $this->createUser('viewer-del@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Safe Project');
+
+        WorkspaceUser::create([
+            'workspace_id' => $workspace->id,
+            'user_id' => $viewer->id,
+            'role' => WorkspaceUser::ROLE_VIEWER,
+        ]);
+
+        $this->actingAs($viewer)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->deleteJson('/test-api/projects/'.$project->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('projects', ['id' => $project->id]);
     }
 
     private function createUser(string $email): User

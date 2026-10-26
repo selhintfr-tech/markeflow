@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { WorkspaceDetail, MarketingProjectItem } from '../types';
 import { initialMarketingProjectsList } from '../data/mock';
 import { workspaceService, type WorkspaceInput, type WorkspaceRecord } from '../features/workspaces/workspaceService';
@@ -26,6 +26,9 @@ const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefin
 
 const PROJECTS_STORAGE_KEY = 'marketflow_projects';
 const CURRENT_WS_STORAGE_KEY = 'marketflow_current_workspace_id';
+const WORKSPACES_CACHE_KEY = 'marketflow_workspaces_list';
+const workspaceStorageKey = (userId: string) => `${CURRENT_WS_STORAGE_KEY}_${userId}`;
+const workspaceListStorageKey = (userId: string) => `${WORKSPACES_CACHE_KEY}_${userId}`;
 const EMPTY_WORKSPACE: WorkspaceDetail = {
   id: '',
   name: '',
@@ -54,20 +57,41 @@ function toWorkspaceDetail(record: WorkspaceRecord): WorkspaceDetail {
 
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading: isAuthLoading } = useAuth();
+  const userId = user?.id;
   const [workspaces, setWorkspaces] = useState<WorkspaceDetail[]>([]);
+  const [workspaceOwnerId, setWorkspaceOwnerId] = useState<string | null>(null);
   const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
-  // Current selected workspace
-  const [currentWorkspaceId, setCurrentWorkspaceId] = useState<string>(() => {
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState('');
+  const currentWorkspaceIdRef = useRef(currentWorkspaceId);
+  currentWorkspaceIdRef.current = currentWorkspaceId;
+  const workspaceOwnerIdRef = useRef(workspaceOwnerId);
+  workspaceOwnerIdRef.current = workspaceOwnerId;
+  const workspacesCountRef = useRef(workspaces.length);
+  workspacesCountRef.current = workspaces.length;
+  const workspaceLoadVersion = useRef(0);
+
+  // Hydrate workspaces immediately from local storage cache when userId is available
+  useEffect(() => {
+    if (!userId) return;
     try {
-      const savedId = localStorage.getItem(CURRENT_WS_STORAGE_KEY);
-      if (savedId) return savedId;
+      const cached = localStorage.getItem(workspaceListStorageKey(userId));
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setWorkspaces(parsed);
+          setWorkspaceOwnerId(userId);
+          const savedId = localStorage.getItem(workspaceStorageKey(userId)) || user?.workspaceId || parsed[0]?.id;
+          if (savedId) {
+            setCurrentWorkspaceId(savedId);
+          }
+        }
+      }
     } catch {
       // ignore
     }
-    return '';
-  });
+  }, [userId, user?.workspaceId]);
 
   // Load initial projects from localStorage or fallback to mock
   const [projects, setProjects] = useState<MarketingProjectItem[]>(() => {
@@ -84,42 +108,76 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const reloadWorkspaces = useCallback(async () => {
-    if (!user) {
+    const loadVersion = ++workspaceLoadVersion.current;
+    if (!userId) {
       setWorkspaces([]);
+      setWorkspaceOwnerId(null);
+      setCurrentWorkspaceId('');
       setIsLoadingWorkspaces(false);
       setWorkspaceError(null);
       return;
     }
 
-    setIsLoadingWorkspaces(true);
+    const isSameUser = workspaceOwnerIdRef.current === userId && workspacesCountRef.current > 0;
+    if (!isSameUser) {
+      setIsLoadingWorkspaces(true);
+      let initialCandidateId = '';
+      try {
+        initialCandidateId = localStorage.getItem(workspaceStorageKey(userId)) || user?.workspaceId || '';
+      } catch {
+        // ignore
+      }
+      if (initialCandidateId) {
+        setCurrentWorkspaceId(initialCandidateId);
+      }
+    }
     setWorkspaceError(null);
     try {
       const records = await workspaceService.list();
+      if (loadVersion !== workspaceLoadVersion.current) return;
       const next = records.map(toWorkspaceDetail);
       setWorkspaces(next);
-      const storedId = localStorage.getItem(CURRENT_WS_STORAGE_KEY);
-      const selected = next.find((workspace) => workspace.id === storedId) || next[0];
+      setWorkspaceOwnerId(userId);
+      try {
+        localStorage.setItem(workspaceListStorageKey(userId), JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      let storedId: string | null = null;
+      try {
+        storedId = localStorage.getItem(workspaceStorageKey(userId)) || user?.workspaceId || null;
+      } catch {
+        setWorkspaceError('Unable to read the saved workspace selection.');
+      }
+      const activeId = currentWorkspaceIdRef.current;
+      const selected =
+        next.find((workspace) => workspace.id === activeId) ||
+        next.find((workspace) => workspace.id === storedId) ||
+        next[0];
       setCurrentWorkspaceId(selected?.id || '');
+      if (selected) {
+        try {
+          localStorage.setItem(workspaceStorageKey(userId), selected.id);
+        } catch {
+          setWorkspaceError('Unable to persist the active workspace selection.');
+        }
+      }
     } catch (error) {
-      setWorkspaces([]);
+      if (loadVersion !== workspaceLoadVersion.current) return;
+      if (!isSameUser) {
+        setWorkspaces([]);
+        setWorkspaceOwnerId(null);
+        setCurrentWorkspaceId('');
+      }
       setWorkspaceError(error instanceof Error ? error.message : 'Unable to load workspaces.');
     } finally {
-      setIsLoadingWorkspaces(false);
+      if (loadVersion === workspaceLoadVersion.current) setIsLoadingWorkspaces(false);
     }
-  }, [user]);
+  }, [user?.workspaceId, userId]);
 
   useEffect(() => {
     if (!isAuthLoading) void reloadWorkspaces();
   }, [isAuthLoading, reloadWorkspaces]);
-
-  useEffect(() => {
-    try {
-      if (currentWorkspaceId) localStorage.setItem(CURRENT_WS_STORAGE_KEY, currentWorkspaceId);
-      else localStorage.removeItem(CURRENT_WS_STORAGE_KEY);
-    } catch {
-      setWorkspaceError('Unable to persist the active workspace selection.');
-    }
-  }, [currentWorkspaceId]);
 
   useEffect(() => {
     try {
@@ -129,14 +187,22 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [projects]);
 
+  const currentUserWorkspaces = workspaceOwnerId === userId ? workspaces : [];
   const currentWorkspace =
-    workspaces.find((w) => w.id === currentWorkspaceId) || workspaces[0] || EMPTY_WORKSPACE;
+    currentUserWorkspaces.find((w) => w.id === currentWorkspaceId) || currentUserWorkspaces[0] || EMPTY_WORKSPACE;
 
   const handleSetCurrentWorkspace = (workspaceOrId: WorkspaceDetail | string) => {
     const id = typeof workspaceOrId === 'string' ? workspaceOrId : workspaceOrId.id;
-    const exists = workspaces.some((w) => w.id === id);
+    const exists = currentUserWorkspaces.some((w) => w.id === id);
     if (exists) {
       setCurrentWorkspaceId(id);
+      if (userId) {
+        try {
+          localStorage.setItem(workspaceStorageKey(userId), id);
+        } catch {
+          setWorkspaceError('Unable to persist the active workspace selection.');
+        }
+      }
     }
   };
 
@@ -144,6 +210,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const created = toWorkspaceDetail(await workspaceService.create(data));
     setWorkspaces((prev) => [...prev, created]);
     setCurrentWorkspaceId(created.id);
+    if (userId) localStorage.setItem(workspaceStorageKey(userId), created.id);
     return created;
   };
 
@@ -156,8 +223,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await workspaceService.remove(id);
     setWorkspaces((prev) => prev.filter((w) => w.id !== id));
     if (currentWorkspaceId === id) {
-      const nextWs = workspaces.find((w) => w.id !== id);
+      const nextWs = currentUserWorkspaces.find((w) => w.id !== id);
       setCurrentWorkspaceId(nextWs?.id || '');
+      if (userId) {
+        if (nextWs) localStorage.setItem(workspaceStorageKey(userId), nextWs.id);
+        else localStorage.removeItem(workspaceStorageKey(userId));
+      }
     }
   };
 
@@ -190,9 +261,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   return (
     <WorkspaceContext.Provider
       value={{
-        workspaces,
+        workspaces: currentUserWorkspaces,
         currentWorkspace,
-        hasWorkspace: workspaces.some((workspace) => workspace.id === currentWorkspaceId),
+        hasWorkspace: !isLoadingWorkspaces && workspaceOwnerId === userId && currentUserWorkspaces.some((workspace) => workspace.id === currentWorkspaceId),
         isLoadingWorkspaces,
         workspaceError,
         reloadWorkspaces,

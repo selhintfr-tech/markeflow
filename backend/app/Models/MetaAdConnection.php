@@ -16,6 +16,7 @@ class MetaAdConnection extends Model
         'meta_user_id',
         'access_token',
         'token_expires_at',
+        'preferred_account_id',
         'scopes',
         'status',
     ];

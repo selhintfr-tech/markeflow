@@ -16,10 +16,11 @@ class SalesShipment extends Model
 
     protected $table = 'sales_shipments';
 
-    protected $fillable = ['workspace_id', 'order_id', 'status', 'delivery_company_id', 'tracking_number', 'shipping_cost', 'cod_amount', 'payment_collection_status'];
+    protected $fillable = ['workspace_id', 'order_id', 'status', 'delivery_company_id', 'tracking_number', 'shipping_cost', 'customer_shipping_charge', 'cod_amount', 'payment_collection_status'];
 
     protected $casts = [
         'shipping_cost' => 'decimal:2',
+        'customer_shipping_charge' => 'decimal:2',
         'cod_amount' => 'decimal:2',
     ];
 

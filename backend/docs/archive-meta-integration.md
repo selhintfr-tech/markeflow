@@ -22,15 +22,15 @@ Configure these variables in the backend environment (never in Vite or frontend 
 - `META_OAUTH_REDIRECT_URI`: exact callback URL registered under the Meta app's Valid OAuth Redirect URIs, for example `https://api.example.com/api/integrations/meta/callback`.
 - `META_FRONTEND_REDIRECT_URI`: trusted frontend URL to receive connection status, for example `https://app.example.com/integrations/meta`.
 
-In Meta for Developers, enable Facebook Login/OAuth, configure the exact redirect URI, and request `ads_read` and `read_insights`. Meta App Review/business verification may be required for production access to accounts not owned by app roles; approval is not implied by this implementation.
+In Meta for Developers, enable Facebook Login/OAuth, configure the exact redirect URI, and request the read-only `ads_read` permission. Meta App Review/business verification may be required for production access to accounts not owned by app roles; approval is not implied by this implementation.
 
-OAuth start is a session-authenticated `POST /api/integrations/meta/connect` with `X-Workspace-Id` and Laravel CSRF protection. It binds a random one-time state value to the authenticated user, workspace, and session, expiring after ten minutes. Meta returns to the configured callback; the callback consumes and validates that state, rechecks the active workspace membership and write authorization, exchanges the code server-to-server, and redirects to the configured frontend URI without returning the token. Access tokens are encrypted using Laravel's `encrypted` cast and `APP_KEY`.
+OAuth start is an authenticated `POST /api/integrations/meta/connect` with `X-Workspace-Id` and Laravel CSRF protection. It stores a hash of a random one-time state value with the initiating user, workspace, and ten-minute expiry. Meta returns to the public API callback, which atomically consumes and validates that state, rechecks the active workspace membership and write authorization, exchanges the code server-to-server, and redirects to the configured frontend URI with only a non-sensitive result indicator. Access tokens are encrypted using Laravel's `encrypted` cast and `APP_KEY`.
 
 Endpoints:
 
 - `GET /api/integrations/meta/status`
 - `POST /api/integrations/meta/connect`
-- `GET /api/integrations/meta/callback` (OAuth callback; authenticated session and one-time state required)
+- `GET /api/integrations/meta/callback` (public OAuth callback; valid one-time state required)
 - `GET /api/integrations/meta/accounts`
 - `GET /api/integrations/meta/insights?account_id=act_123&date_preset=last_30d`
 - `DELETE /api/integrations/meta/connection`

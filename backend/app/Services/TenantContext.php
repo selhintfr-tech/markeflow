@@ -72,6 +72,10 @@ class TenantContext
         $this->workspace = null;
         $this->membership = null;
         $this->bypassScope = false;
+
+        if (app()->bound(WorkspaceAuthorizationService::class)) {
+            app(WorkspaceAuthorizationService::class)->clearCache();
+        }
     }
 
     /**

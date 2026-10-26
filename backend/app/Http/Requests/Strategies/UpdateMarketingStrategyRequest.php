@@ -47,7 +47,7 @@ class UpdateMarketingStrategyRequest extends FormRequest
                 },
             ],
             'status' => ['sometimes', 'required', 'string', Rule::in(MarketingStrategy::STATUSES)],
-            'progress' => ['sometimes', 'integer', 'between:0,100'],
+            'progress' => ['prohibited'],
             'action_plan' => ['sometimes', 'nullable', 'array', 'max:100'],
             'action_plan.*' => ['array'],
             'action_plan.*.title' => ['required_with:action_plan.*', 'string', 'max:255'],

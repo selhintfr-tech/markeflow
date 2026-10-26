@@ -8,7 +8,6 @@ import {
   ChevronDown,
   UserCheck,
   Megaphone,
-  MoreHorizontal,
   MapPin,
   User,
   Tag,
@@ -28,6 +27,7 @@ import { audienceService, type AudienceRecord, type AudienceInput } from './audi
 import { campaignService, type CampaignRecord } from '../campaigns/campaignService';
 import { ApiError } from '../api/apiClient';
 import type { AudienceSegment, CustomerType } from '../../types';
+import { AudienceActionMenu } from './components/AudienceActionMenu';
 
 function recordToSegment(record: AudienceRecord): AudienceSegment {
   const demographics = record.demographics || {};
@@ -690,59 +690,21 @@ export const AudiencesPage: React.FC = () => {
                           <td className="py-4 px-3 text-[#64748B] whitespace-nowrap">{seg.updated}</td>
 
                           {/* Row Action Menu */}
-                          <td className="py-4 px-3 text-right relative">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveMenuSegmentId(activeMenuSegmentId === seg.id ? null : seg.id);
+                          <td className="py-4 px-3 text-right">
+                            <AudienceActionMenu
+                              segment={seg}
+                              isOpen={activeMenuSegmentId === seg.id}
+                              onToggle={() => setActiveMenuSegmentId(activeMenuSegmentId === seg.id ? null : seg.id)}
+                              onClose={() => setActiveMenuSegmentId(null)}
+                              onEdit={handleOpenEdit}
+                              onUseInCampaign={(s) => {
+                                setSelectedSegmentId(s.id);
+                                setIsUseInCampaignOpen(true);
                               }}
-                              className="p-1 rounded hover:bg-slate-200/60 text-[#94A3B8] hover:text-[#1E1B4B] transition-colors"
-                            >
-                              <MoreHorizontal className="w-4 h-4" />
-                            </button>
-
-                            {activeMenuSegmentId === seg.id && (
-                              <div className="absolute right-3 top-10 w-36 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 z-30 text-left">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveMenuSegmentId(null);
-                                    handleOpenEdit(seg);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5 text-[#64748B]" />
-                                  <span>Edit Segment</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveMenuSegmentId(null);
-                                    setSelectedSegmentId(seg.id);
-                                    setIsUseInCampaignOpen(true);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Megaphone className="w-3.5 h-3.5 text-[#64748B]" />
-                                  <span>Use in Campaign</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveMenuSegmentId(null);
-                                    setDeleteConfirmSegId(seg.id);
-                                  }}
-                                  className="w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                  <span>Delete Segment</span>
-                                </button>
-                              </div>
-                            )}
+                              onDelete={(s) => {
+                                setDeleteConfirmSegId(s.id);
+                              }}
+                            />
                           </td>
                         </tr>
                       );

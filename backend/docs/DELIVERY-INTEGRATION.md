@@ -28,6 +28,7 @@ collected and does not trigger a Meta Purchase event.
 
 | Candidate carrier | Verification state | Carrier-specific material required before enabling |
 | --- | --- | --- |
+| Ozon Express (Morocco) | Enabled (Safe First Phase, Dry-run / Read-only default). | Endpoints documented: `add-parcel`, `parcel-info`, `tracking` (single/bulk), `add-delivery-note`, `add-parcel-to-delivery-note`, `save-delivery-note`. Unverified: webhooks & listing all parcels (not supported until documented). |
 | Amana / Barid Al-Maghrib | Not verified; no official API pack or sandbox credentials supplied. | Amana merchant API specification and version, sandbox account/API credentials, create/label/cancel/tracking schemas, Morocco-specific status list, COD collection/remittance semantics, signed webhook specification, limits, and sandbox cases. |
 | Cathedis | Not verified; no official API pack or sandbox credentials supplied. | Cathedis merchant API specification and version, sandbox account/API credentials, create/label/cancel/tracking schemas, status dictionary, COD collection/remittance semantics, signed webhook specification, limits, and sandbox cases. |
 | Aramex Morocco | Not verified; no official API pack or sandbox credentials supplied. | Aramex's official Morocco account/API product documentation and sandbox credentials, enabled shipment/tracking services, request/response schemas, status/COD semantics, webhook signing/retries, limits, and sandbox cases. |

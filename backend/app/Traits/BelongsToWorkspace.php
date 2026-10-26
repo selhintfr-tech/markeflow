@@ -108,6 +108,19 @@ trait BelongsToWorkspace
                 );
             }
         });
+
+        // 4. Invalidate workspace analytics cache on create/update/delete
+        static::saved(function ($model) {
+            if (!empty($model->workspace_id)) {
+                \App\Services\Analytics\WorkspaceAnalyticsService::invalidateWorkspaceCache($model->workspace_id);
+            }
+        });
+
+        static::deleted(function ($model) {
+            if (!empty($model->workspace_id)) {
+                \App\Services\Analytics\WorkspaceAnalyticsService::invalidateWorkspaceCache($model->workspace_id);
+            }
+        });
     }
 
     /**

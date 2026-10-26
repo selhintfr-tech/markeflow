@@ -11,9 +11,10 @@ class SavedReport extends Model
 {
     use BelongsToWorkspace, HasUuids;
 
-    public const TYPES = ['overview', 'campaigns', 'tasks', 'crm', 'finance', 'timeseries'];
+    public const TYPES = ['overview', 'campaigns', 'tasks', 'crm', 'finance', 'timeseries', 'projects'];
+    public const STATUSES = ['Ready', 'In Review', 'Draft', 'Archived'];
 
-    protected $fillable = ['name', 'type', 'from_date', 'to_date', 'filters', 'configuration'];
+    protected $fillable = ['name', 'type', 'status', 'from_date', 'to_date', 'filters', 'configuration'];
 
     protected function casts(): array
     {

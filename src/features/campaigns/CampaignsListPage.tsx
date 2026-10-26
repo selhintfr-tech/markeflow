@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Megaphone,
@@ -25,6 +25,7 @@ import { CreateCampaignModal } from './components/CreateCampaignModal';
 import { campaignService, type CampaignRecord } from './campaignService';
 import { projectService, type ProjectRecord } from '../projects/projectService';
 import { ApiError } from '../api/apiClient';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
 
 function toCampaignItem(record: CampaignRecord, project: ProjectRecord | undefined, workspaceName: string): CampaignItem {
   return {
@@ -39,7 +40,7 @@ function toCampaignItem(record: CampaignRecord, project: ProjectRecord | undefin
     channel: record.channel,
     startDate: record.start_date,
     endDate: record.end_date,
-    periodLabel: `${record.start_date} – ${record.end_date}`,
+    periodLabel: record.end_date ? `${record.start_date} – ${record.end_date}` : `${record.start_date} – Ongoing`,
     adBudget: Number(record.budget),
     adSpend: Number(record.spend),
     leads: record.leads,
@@ -58,8 +59,10 @@ export const CampaignsListPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const campaignLoadVersion = useRef(0);
 
   const reloadCampaigns = useCallback(async () => {
+    const request = ++campaignLoadVersion.current;
     if (!hasWorkspace) {
       setCampaigns([]);
       setProjects([]);
@@ -73,20 +76,26 @@ export const CampaignsListPage: React.FC = () => {
         campaignService.list(currentWorkspace.id),
         projectService.list(currentWorkspace.id),
       ]);
+      if (request !== campaignLoadVersion.current) return;
       setProjects(workspaceProjects);
       const projectById = new Map(workspaceProjects.map((project) => [project.id, project]));
       setCampaigns(records.map((record) => toCampaignItem(record, projectById.get(record.project_id), currentWorkspace.name)));
     } catch (error) {
+      if (request !== campaignLoadVersion.current) return;
       setCampaigns([]);
       setProjects([]);
       setLoadError(error instanceof Error ? error.message : 'Unable to load campaigns.');
     } finally {
-      setIsLoading(false);
+      if (request === campaignLoadVersion.current) setIsLoading(false);
     }
   }, [hasWorkspace, currentWorkspace.id, currentWorkspace.name]);
 
   useEffect(() => {
-    if (!isLoadingWorkspaces) void reloadCampaigns();
+    if (isLoadingWorkspaces) return;
+    void reloadCampaigns();
+    return () => {
+      campaignLoadVersion.current += 1;
+    };
   }, [isLoadingWorkspaces, reloadCampaigns]);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -189,7 +198,7 @@ export const CampaignsListPage: React.FC = () => {
 
   // Handlers
   const handleSaveCampaign = async (campaignData: Partial<CampaignItem>) => {
-    if (!hasWorkspace || !campaignData.projectId || !campaignData.name || !campaignData.startDate || !campaignData.endDate || !campaignData.platform) return;
+    if (!hasWorkspace || !campaignData.projectId || !campaignData.name || !campaignData.startDate || !campaignData.platform) return;
     setIsSaving(true);
     setActionError(null);
     try {
@@ -201,7 +210,7 @@ export const CampaignsListPage: React.FC = () => {
         channel: campaignData.channel || campaignData.platform,
         objective: campaignData.objectiveType || null,
         start_date: campaignData.startDate,
-        end_date: campaignData.endDate,
+        end_date: campaignData.endDate || null,
         status: campaignData.status || 'Planned',
         budget: campaignData.adBudget ?? 0,
       };
@@ -384,7 +393,7 @@ export const CampaignsListPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-2xl font-bold text-[#1E1B4B]">{activeCount}</div>
+            <div className="text-2xl font-bold text-[#1E1B4B]">{isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-100" /> : activeCount}</div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
               <span>0% from last month</span>
@@ -405,7 +414,7 @@ export const CampaignsListPage: React.FC = () => {
           </div>
           <div className="mt-4">
             <div className="text-2xl font-bold text-[#1E1B4B]">
-              {plannedBudgetSum.toLocaleString()} {currency}
+              {isLoading ? <span className="inline-block h-7 w-24 animate-pulse rounded bg-slate-100" /> : `${plannedBudgetSum.toLocaleString()} ${currency}`}
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -427,7 +436,7 @@ export const CampaignsListPage: React.FC = () => {
           </div>
           <div className="mt-4">
             <div className="text-2xl font-bold text-[#1E1B4B]">
-              {adSpendSum.toLocaleString()} {currency}
+              {isLoading ? <span className="inline-block h-7 w-24 animate-pulse rounded bg-slate-100" /> : `${adSpendSum.toLocaleString()} ${currency}`}
             </div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
@@ -448,7 +457,7 @@ export const CampaignsListPage: React.FC = () => {
             </div>
           </div>
           <div className="mt-4">
-            <div className="text-2xl font-bold text-[#1E1B4B]">{leadsSum}</div>
+            <div className="text-2xl font-bold text-[#1E1B4B]">{isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-slate-100" /> : leadsSum}</div>
             <div className="flex items-center gap-1 text-xs font-medium text-[#0D9488] mt-1">
               <ArrowUpRight className="w-3.5 h-3.5" />
               <span>24% from last month</span>
@@ -632,7 +641,15 @@ export const CampaignsListPage: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-[#F1F5F9] text-xs">
               {isLoading || isLoadingWorkspaces ? (
-                <tr><td colSpan={7} className="py-12 text-center text-xs text-[#64748B]">Loading campaigns…</td></tr>
+                Array.from({ length: 5 }, (_, row) => (
+                  <tr key={`loading-${row}`} aria-hidden="true">
+                    {Array.from({ length: 10 }, (_, column) => (
+                      <td key={column} className="px-4 py-3.5">
+                        <div className={`h-3 animate-pulse rounded bg-slate-100 ${column === 0 ? 'w-4/5' : column === 9 ? 'mx-auto w-8' : 'w-3/5'}`} />
+                      </td>
+                    ))}
+                  </tr>
+                ))
               ) : paginatedCampaigns.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-[#64748B]">
@@ -686,7 +703,7 @@ export const CampaignsListPage: React.FC = () => {
                     <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B]">{c.startDate}</td>
 
                     {/* End Date */}
-                    <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B]">{c.endDate}</td>
+                    <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B]">{c.endDate || 'Ongoing'}</td>
 
                     {/* Ad Budget */}
                     <td className="py-3.5 px-4 whitespace-nowrap text-[#1E1B4B] font-medium">
@@ -726,52 +743,61 @@ export const CampaignsListPage: React.FC = () => {
                           </Link>
                         )}
 
-                        <div className="relative">
+                        <ActionDropdown
+                          isOpen={activeMenuId === c.id}
+                          onClose={() => setActiveMenuId(null)}
+                          ariaLabel={`Actions for campaign ${c.name}`}
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveMenuId(activeMenuId === c.id ? null : c.id)
+                              }
+                              className="p-1.5 text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              aria-label={`Actions for campaign ${c.name}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
+                          className="w-36 py-1 text-xs text-[#1E1B4B]"
+                        >
                           <button
                             type="button"
-                            onClick={() =>
-                              setActiveMenuId(activeMenuId === c.id ? null : c.id)
-                            }
-                            className="p-1.5 text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 rounded-lg transition-colors"
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              setEditingCampaign(c);
+                              setIsCreateModalOpen(true);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-[#F5F3FF] flex items-center gap-2 text-[#1E1B4B] cursor-pointer"
                           >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <Edit2 className="w-3.5 h-3.5 text-[#6D28D9]" />
+                            Edit Campaign
                           </button>
-
-                          {activeMenuId === c.id && (
-                            <div className="absolute right-0 mt-1 w-36 bg-white border border-[#E2E8F0] rounded-lg shadow-lg z-30 py-1 text-xs text-[#1E1B4B]">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveMenuId(null);
-                                  setEditingCampaign(c);
-                                  setIsCreateModalOpen(true);
-                                }}
-                                className="w-full text-left px-3 py-1.5 hover:bg-[#F5F3FF] flex items-center gap-2 text-[#1E1B4B]"
-                              >
-                                <Edit2 className="w-3.5 h-3.5 text-[#6D28D9]" />
-                                Edit Campaign
-                              </button>
-                              {c.status !== 'Archived' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleArchive(c.id)}
-                                  className="w-full text-left px-3 py-1.5 hover:bg-[#F5F3FF] flex items-center gap-2 text-[#64748B]"
-                                >
-                                  <Archive className="w-3.5 h-3.5 text-[#94A3B8]" />
-                                  Archive
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(c.id)}
-                                className="w-full text-left px-3 py-1.5 hover:bg-red-50 flex items-center gap-2 text-red-600"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                                Delete
-                              </button>
-                            </div>
+                          {c.status !== 'Archived' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuId(null);
+                                handleArchive(c.id);
+                              }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-[#F5F3FF] flex items-center gap-2 text-[#64748B] cursor-pointer"
+                            >
+                              <Archive className="w-3.5 h-3.5 text-[#94A3B8]" />
+                              Archive
+                            </button>
                           )}
-                        </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              handleDelete(c.id);
+                            }}
+                            className="w-full text-left px-3 py-1.5 hover:bg-red-50 flex items-center gap-2 text-red-600 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            Delete
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </td>
                   </tr>

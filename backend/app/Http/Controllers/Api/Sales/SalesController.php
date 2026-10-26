@@ -32,6 +32,7 @@ class SalesController extends Controller
         $search = $request->validate(['search' => ['sometimes', 'string', 'max:255']])['search'] ?? null;
         $customers = SalesCustomer::query()
             ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+            ->withCount('orders')
             ->when($search, fn ($query) => $query->where(function ($query) use ($search): void {
                 $query->where('first_name', 'like', '%'.$search.'%')
                     ->orWhere('last_name', 'like', '%'.$search.'%')
@@ -58,7 +59,72 @@ class SalesController extends Controller
         $customer->workspace_id = $this->tenantContext->getWorkspaceId();
         $customer->save();
 
-        return response()->json(['data' => $customer], 201);
+        return response()->json(['data' => $customer->loadCount('orders')], 201);
+    }
+
+    public function updateCustomer(Request $request, string $customer): JsonResponse
+    {
+        $this->authorizeSalesAccess($request->user(), true);
+        $record = SalesCustomer::query()
+            ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+            ->findOrFail($customer);
+
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['nullable', 'string', 'max:255'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:64'],
+            'address' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $record->fill($data);
+        $record->save();
+
+        return response()->json(['data' => $record->loadCount('orders')]);
+    }
+
+    public function destroyCustomer(Request $request, string $customer): JsonResponse
+    {
+        $this->authorizeSalesAccess($request->user(), true);
+        $record = SalesCustomer::query()
+            ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+            ->withCount('orders')
+            ->findOrFail($customer);
+
+        if ($record->orders_count > 0) {
+            return response()->json([
+                'message' => "This customer cannot be deleted because they have {$record->orders_count} linked order(s). Customer records with sales history must be preserved for audit integrity.",
+                'code' => 'CUSTOMER_HAS_ORDERS',
+                'orders_count' => $record->orders_count,
+            ], 422);
+        }
+
+        $hasFinancialRecords = DB::table('sales_order_financial_records')
+            ->whereIn('order_id', function ($query) use ($record): void {
+                $query->select('id')->from('sales_orders')->where('customer_id', $record->id);
+            })->exists();
+
+        if ($hasFinancialRecords) {
+            return response()->json([
+                'message' => 'This customer cannot be deleted because linked financial records exist.',
+                'code' => 'CUSTOMER_HAS_FINANCIAL_RECORDS',
+            ], 422);
+        }
+
+        $deleted = [
+            'id' => $record->id,
+            'first_name' => $record->first_name,
+            'last_name' => $record->last_name,
+        ];
+
+        DB::transaction(function () use ($record): void {
+            $record->delete();
+        });
+
+        return response()->json([
+            'message' => 'Customer deleted successfully.',
+            'data' => $deleted,
+        ]);
     }
 
     public function orders(Request $request): JsonResponse
@@ -108,10 +174,17 @@ class SalesController extends Controller
             'shipment' => ['sometimes', 'array'],
             'shipment.delivery_company_id' => ['nullable', 'string', 'max:255'],
             'shipment.tracking_number' => ['nullable', 'string', 'max:255'],
-            'shipment.shipping_cost' => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
-            'shipment.cod_amount' => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shipment.shipping_cost' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shipment.customer_shipping_charge' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shipment.cod_amount' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'shipment.payment_collection_status' => ['sometimes', Rule::in(SalesShipment::COLLECTION_STATUSES)],
         ]);
+        if (array_key_exists('customer_shipping_charge', $data['shipment'] ?? [])) {
+            $data['total'] = round(
+                (float) $data['subtotal'] + (float) ($data['shipment']['customer_shipping_charge'] ?? 0),
+                2,
+            );
+        }
 
         $order = DB::transaction(function () use ($data, $workspaceId, $request): SalesOrder {
             $order = new SalesOrder([
@@ -153,9 +226,30 @@ class SalesController extends Controller
     public function updateStatus(Request $request, string $order): JsonResponse
     {
         $this->authorizeSalesAccess($request->user(), true);
-        $data = $request->validate(['status' => ['required', Rule::in(SalesOrder::STATUSES)]]);
+        $data = $request->validate([
+            'status' => ['required', Rule::in(SalesOrder::STATUSES)],
+            'sync_shipment' => ['sometimes', 'boolean'],
+        ]);
         $record = $this->findOrder($order);
-        $updated = $this->orderLifecycle->transition($record, $data['status'], 'manual', $request->user()->id);
+
+        $metadata = [];
+        if (! empty($data['sync_shipment']) && $data['status'] === 'Delivered') {
+            $record->load('shipments');
+            $syncedShipmentIds = [];
+            foreach ($record->shipments as $shipment) {
+                if ($shipment->status !== 'Delivered') {
+                    $shipment->status = 'Delivered';
+                    $shipment->save();
+                    $syncedShipmentIds[] = $shipment->id;
+                }
+            }
+            if (! empty($syncedShipmentIds)) {
+                $metadata['synced_shipment_ids'] = $syncedShipmentIds;
+                $metadata['synced_shipment_status'] = 'Delivered';
+            }
+        }
+
+        $updated = $this->orderLifecycle->transition($record, $data['status'], 'manual', $request->user()->id, $metadata);
 
         return response()->json(['data' => $updated->load(['customer', 'shipments', 'statusHistory'])]);
     }
@@ -171,6 +265,66 @@ class SalesController extends Controller
         return response()->json(['data' => $record->load(['customer', 'shipments', 'statusHistory'])]);
     }
 
+    public function destroyOrder(Request $request, string $order): JsonResponse
+    {
+        $this->authorizeSalesAccess($request->user(), true);
+        $record = $this->findOrder($order);
+
+        $hasFinanceTransactions = DB::table('finance_transactions')
+            ->where('workspace_id', $this->tenantContext->getWorkspaceId())
+            ->where('order_id', $record->id)
+            ->exists();
+
+        if ($hasFinanceTransactions) {
+            return response()->json([
+                'message' => 'This order cannot be deleted because it is linked to recorded financial ledger transactions. Please cancel the order instead to preserve accounting history.',
+                'code' => 'ORDER_HAS_TRANSACTIONS',
+            ], 422);
+        }
+
+        if (in_array($record->payment_status, ['Paid', 'Partially Paid'], true)) {
+            return response()->json([
+                'message' => 'This order cannot be deleted because payment has already been recorded. Please cancel or refund the order instead.',
+                'code' => 'ORDER_PAYMENT_REALIZED',
+            ], 422);
+        }
+
+        $record->load(['shipments', 'financialRecord']);
+
+        if ($record->financialRecord && ($record->financialRecord->sales_collected !== null || $record->financialRecord->shipping_collected !== null)) {
+            return response()->json([
+                'message' => 'This order cannot be deleted because revenue collection has already been recorded. Please cancel the order instead.',
+                'code' => 'ORDER_REVENUE_COLLECTED',
+            ], 422);
+        }
+
+        $hasActiveShipment = $record->shipments->contains(function (SalesShipment $shipment): bool {
+            return in_array($shipment->status, ['In transit', 'Delivered'], true)
+                || $shipment->payment_collection_status === 'Collected';
+        });
+
+        if ($hasActiveShipment) {
+            return response()->json([
+                'message' => 'This order cannot be deleted because a shipment has already been dispatched or delivered. Please mark it returned or cancelled.',
+                'code' => 'ORDER_SHIPMENT_DISPATCHED',
+            ], 422);
+        }
+
+        $deletedOrder = [
+            'id' => $record->id,
+            'order_number' => $record->order_number,
+        ];
+
+        DB::transaction(function () use ($record): void {
+            $record->delete();
+        });
+
+        return response()->json([
+            'message' => 'Order deleted successfully.',
+            'data' => $deletedOrder,
+        ]);
+    }
+
     public function updateShipment(Request $request, string $shipment): JsonResponse
     {
         $this->authorizeSalesAccess($request->user(), true);
@@ -178,8 +332,9 @@ class SalesController extends Controller
             'status' => ['sometimes', Rule::in(SalesShipment::STATUSES)],
             'delivery_company_id' => ['sometimes', 'nullable', 'string', 'max:255'],
             'tracking_number' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'shipping_cost' => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
-            'cod_amount' => ['sometimes', 'numeric', 'min:0', 'max:9999999999.99'],
+            'shipping_cost' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'customer_shipping_charge' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
+            'cod_amount' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:9999999999.99'],
             'payment_collection_status' => ['sometimes', Rule::in(SalesShipment::COLLECTION_STATUSES)],
         ]);
         $record = SalesShipment::query()

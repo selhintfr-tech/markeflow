@@ -15,12 +15,14 @@ import {
   Edit2,
   Trash2,
   RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import type { MarketingProjectItem, MarketingProjectStatus } from '../../types';
 import { projectService, type ProjectRecord } from './projectService';
 import { ApiError } from '../api/apiClient';
 import { useAuth } from '../../context/AuthContext';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
 
 function toProjectItem(record: ProjectRecord, workspaceName: string, currentUserId?: string): MarketingProjectItem {
   const ownerName = currentUserId && String(record.owner_id) === currentUserId ? 'You' : `Member ${record.owner_id}`;
@@ -92,6 +94,9 @@ export const ProjectsListPage: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<MarketingProjectItem | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<MarketingProjectItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Form states for Create/Edit
   const [formName, setFormName] = useState('');
@@ -237,14 +242,19 @@ export const ProjectsListPage: React.FC = () => {
     }
   };
 
-  const handleDeleteProject = async (id: string) => {
-    if (!hasWorkspace || !window.confirm('Delete this project? This action cannot be undone.')) return;
-    setActiveMenuId(null);
+  const confirmDeleteProject = async () => {
+    if (!projectToDelete || !hasWorkspace) return;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
-      await projectService.remove(currentWorkspace.id, id);
-      setProjects((prev) => prev.filter((project) => project.id !== id));
+      await projectService.remove(currentWorkspace.id, projectToDelete.id);
+      setProjects((prev) => prev.filter((project) => project.id !== projectToDelete.id));
+      setProjectToDelete(null);
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Unable to delete project.');
+      const message = error instanceof Error ? error.message : 'Unable to delete project.';
+      setDeleteError(message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -496,8 +506,8 @@ export const ProjectsListPage: React.FC = () => {
       </div>
 
       {/* 4. Projects Table */}
-      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs">
+        <div className="overflow-x-auto min-h-[220px] pb-16">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-[#F1F5F9] bg-[#F8FAFC]/60 text-[11px] font-semibold text-[#64748B]">
@@ -594,7 +604,7 @@ export const ProjectsListPage: React.FC = () => {
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap relative">
+                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
@@ -604,35 +614,43 @@ export const ProjectsListPage: React.FC = () => {
                           Open
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActiveMenuId(activeMenuId === project.id ? null : project.id)
+                        <ActionDropdown
+                          isOpen={activeMenuId === project.id}
+                          onClose={() => setActiveMenuId(null)}
+                          ariaLabel={`Actions for project ${project.name}`}
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveMenuId(activeMenuId === project.id ? null : project.id);
+                              }}
+                              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label="Project actions"
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
                           }
-                          className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                          className="w-36 py-1 text-xs text-[#1E1B4B]"
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Contextual Action Menu */}
-                      {activeMenuId === project.id && (
-                        <div className="absolute right-4 top-11 w-36 bg-white border border-[#E2E8F0] rounded-lg shadow-lg py-1 z-30 text-left">
                           <button
                             type="button"
                             onClick={() => {
                               setActiveMenuId(null);
                               openEditModal(project);
                             }}
-                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                           >
                             <Edit2 className="w-3.5 h-3.5 text-[#64748B]" />
                             Edit Project
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleToggleArchive(project.id)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              handleToggleArchive(project.id);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                           >
                             {project.status === 'Archived' ? (
                               <>
@@ -648,14 +666,18 @@ export const ProjectsListPage: React.FC = () => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteProject(project.id)}
-                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                            onClick={() => {
+                              setActiveMenuId(null);
+                              setProjectToDelete(project);
+                              setDeleteError(null);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-red-500" />
                             Delete
                           </button>
-                        </div>
-                      )}
+                        </ActionDropdown>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -859,6 +881,79 @@ export const ProjectsListPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Confirmation Modal */}
+      {projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl shadow-xl border border-[#E2E8F0] w-full max-w-md p-6">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-full bg-red-100 text-red-600 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-[#1E1B4B]">Delete Project</h3>
+                <p className="text-xs text-[#64748B] mt-1">
+                  Are you sure you want to delete <span className="font-semibold text-[#1E1B4B]">"{projectToDelete.name}"</span>?
+                </p>
+              </div>
+            </div>
+
+            {deleteError ? (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800 space-y-1">
+                    <p className="font-semibold">Project cannot be deleted</p>
+                    <p>{deleteError}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const projId = projectToDelete.id;
+                      setProjectToDelete(null);
+                      setDeleteError(null);
+                      handleToggleArchive(projId);
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold text-[#6D28D9] bg-[#F5F3FF] hover:bg-[#EDE9FE] rounded-lg transition-colors"
+                  >
+                    Archive Project Instead
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-xs text-red-700">
+                This action cannot be undone. Any projects with linked tasks, campaigns, strategies, or records will be protected from deletion.
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => {
+                  setProjectToDelete(null);
+                  setDeleteError(null);
+                }}
+                className="px-3.5 py-2 text-xs font-semibold text-[#64748B] hover:text-[#1E1B4B] border border-[#E2E8F0] rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                {deleteError ? 'Close' : 'Cancel'}
+              </button>
+              {!deleteError && (
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={confirmDeleteProject}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors shadow-2xs disabled:opacity-50"
+                >
+                  {isDeleting ? 'Deleting…' : 'Delete Project'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

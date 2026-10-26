@@ -16,6 +16,10 @@ Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])
         Route::post('/shipments', [DeliveryController::class, 'createShipment'])->name('shipments.store');
         Route::post('/shipments/{id}/dispatch', [DeliveryController::class, 'dispatch'])->name('shipments.dispatch');
         Route::post('/shipments/{id}/refresh', [DeliveryController::class, 'refreshShipment'])->name('shipments.refresh');
+
+        Route::get('/ozon/dashboard', [DeliveryController::class, 'ozonDashboard'])->name('ozon.dashboard');
+        Route::post('/ozon/probe', [DeliveryController::class, 'ozonProbe'])->name('ozon.probe');
+        Route::post('/ozon/import', [DeliveryController::class, 'ozonImport'])->name('ozon.import');
     });
 
 Route::post('/delivery/webhooks/{connectionId}', [DeliveryController::class, 'webhook'])

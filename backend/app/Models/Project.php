@@ -6,6 +6,7 @@ use App\Traits\BelongsToWorkspace;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
@@ -35,6 +36,7 @@ class Project extends Model
     protected $fillable = [
         'name',
         'description',
+        'objectives',
         'status',
         'start_date',
         'end_date',
@@ -50,11 +52,25 @@ class Project extends Model
             'start_date' => 'date',
             'end_date' => 'date',
             'progress' => 'integer',
+            'objectives' => 'array',
         ];
     }
 
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function milestones(): HasMany
+    {
+        return $this->hasMany(ProjectMilestone::class)->orderBy('due_date')->orderBy('created_at');
+    }
+
+    public function activities(): HasMany
+    {
+        return $this->hasMany(WorkspaceAuditLog::class, 'entity_id')
+            ->where('entity_type', 'project')
+            ->with('user:id,name')
+            ->orderByDesc('created_at');
     }
 }

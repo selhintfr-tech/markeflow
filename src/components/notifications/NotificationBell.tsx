@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { useNotifications } from './useNotifications';
 import { NotificationsPanel } from './NotificationsPanel';
+import { useAuth } from '../../context/AuthContext';
+import { useWorkspace } from '../../context/WorkspaceContext';
 
 const PANEL_ID = 'notifications-panel';
 
@@ -9,9 +11,15 @@ interface NotificationBellProps {
   workspaceId?: string;
 }
 
-export const NotificationBell = ({ workspaceId }: NotificationBellProps) => {
+export const NotificationBell = ({ workspaceId: requestedWorkspaceId }: NotificationBellProps) => {
+  const { user } = useAuth();
+  const { currentWorkspace, hasWorkspace } = useWorkspace();
+  const workspaceId = requestedWorkspaceId || (hasWorkspace ? currentWorkspace.id : undefined);
   const [isOpen, setIsOpen] = useState(false);
-  const { unreadCount } = useNotifications({ workspaceId });
+  const { unreadCount, notifications, loading, hasMore, error, markAsRead, markAllAsRead, reload, loadMore } = useNotifications({
+    workspaceId,
+    userId: user?.id,
+  });
   const bellRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -100,7 +108,15 @@ export const NotificationBell = ({ workspaceId }: NotificationBellProps) => {
           onClose={closePanel}
           panelId={PANEL_ID}
           closeRef={closeRef}
-          workspaceId={workspaceId}
+          notifications={notifications}
+          unreadCount={unreadCount}
+          loading={loading}
+          hasMore={hasMore}
+          error={error}
+          onMarkAsRead={markAsRead}
+          onMarkAllAsRead={markAllAsRead}
+          onRetry={reload}
+          onLoadMore={loadMore}
         />
       </div>
     </div>

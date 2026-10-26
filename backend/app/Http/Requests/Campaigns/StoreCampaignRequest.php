@@ -25,7 +25,7 @@ class StoreCampaignRequest extends FormRequest
             'channel' => ['required', 'string', 'max:100'],
             'objective' => ['nullable', 'string', 'max:255'],
             'start_date' => ['required', 'date'],
-            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
             'budget' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'spend' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'leads' => ['sometimes', 'required', 'integer', 'min:0', 'max:4294967295'],

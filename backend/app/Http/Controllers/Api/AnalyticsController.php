@@ -25,6 +25,8 @@ class AnalyticsController extends Controller
                 $this->tenantContext->getWorkspaceId(),
                 $request->validated('from'),
                 $request->validated('to'),
+                $request->validated('campaign_id'),
+                $request->validated('channel'),
             ),
         ]);
     }
@@ -38,6 +40,8 @@ class AnalyticsController extends Controller
                 $this->tenantContext->getWorkspaceId(),
                 $request->validated('from'),
                 $request->validated('to'),
+                $request->validated('campaign_id'),
+                $request->validated('channel'),
             ),
         ]);
     }

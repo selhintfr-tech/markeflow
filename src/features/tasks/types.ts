@@ -49,7 +49,7 @@ export interface TaskItem {
   assigneeId?: number;
   assignee: TaskAssignee;
   priority: TaskPriority;
-  dueDate: string;
+  dueDate?: string | null;
   status: TaskStatus;
   checklist: TaskChecklistItem[];
   comments: TaskComment[];

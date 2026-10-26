@@ -24,7 +24,9 @@ export type WorkspaceInput = Partial<Pick<
 
 export const workspaceService = {
   async list(): Promise<WorkspaceRecord[]> {
-    const response = await apiRequest<ApiCollection<WorkspaceRecord>>('/api/workspaces');
+    const response = await apiRequest<ApiCollection<WorkspaceRecord>>('/api/workspaces', {
+      cacheTtlMs: 10_000,
+    });
     return response.data;
   },
   async create(payload: WorkspaceInput): Promise<WorkspaceRecord> {

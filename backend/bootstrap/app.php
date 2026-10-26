@@ -5,6 +5,7 @@ use App\Http\Middleware\SetTenantContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,11 +15,16 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->redirectGuestsTo(
+            fn (Request $request): ?string => $request->is('api/*') ? null : route('login')
+        );
         $middleware->alias([
             'tenant' => SetTenantContext::class,
             'tenant.required' => EnsureTenantContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request, \Throwable $exception): bool => $request->is('api/*') || $request->expectsJson()
+        );
     })->create();

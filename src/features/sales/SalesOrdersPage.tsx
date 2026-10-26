@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownUp, ChevronDown, CircleDollarSign, Clock3, PackageCheck, Plus, Search, ShoppingBag, Truck, UserRound, X } from 'lucide-react';
+import { AlertTriangle, ArrowDownUp, Ban, ChevronDown, CircleDollarSign, Clock3, PackageCheck, Plus, RefreshCw, Search, ShoppingBag, Trash2, Truck, Upload, UserRound, X } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import {
   salesService,
@@ -11,8 +11,15 @@ import {
   type SalesCustomer,
   type ShipmentStatus,
 } from './salesService';
+import { DeleteOrderModal } from './components/DeleteOrderModal';
+import { SyncShipmentModal } from './components/SyncShipmentModal';
+import { SendToOzonModal } from './components/SendToOzonModal';
+import { ImportOzonParcelsModal } from './components/ImportOzonParcelsModal';
+import { OzonParcelDetailsModal } from './components/OzonParcelDetailsModal';
+import { OzonReviewQueueModal } from './components/OzonReviewQueueModal';
+import type { OzonSyncStatusData } from './salesService';
 
-const ORDER_STATUSES: OrderStatus[] = ['Pending', 'Confirmed', 'Shipping', 'Delivered', 'Returned', 'Rejected'];
+const ORDER_STATUSES: OrderStatus[] = ['Pending', 'Confirmed', 'Shipping', 'Delivered', 'Returned', 'Rejected', 'Cancelled'];
 const PAYMENT_STATUSES: PaymentStatus[] = ['Pending', 'Paid', 'Partially Paid', 'Failed', 'Refunded'];
 const SHIPMENT_STATUSES: ShipmentStatus[] = ['Pending', 'Ready', 'In transit', 'Delivered', 'Returned', 'Failed'];
 const COLLECTION_STATUSES: CollectionStatus[] = ['Pending', 'Collected', 'Failed', 'Not applicable'];
@@ -41,6 +48,7 @@ function statusClass(status: string) {
     Failed: 'bg-rose-50 text-rose-700',
     'Partially Paid': 'bg-blue-50 text-blue-700',
     Refunded: 'bg-slate-100 text-slate-700',
+    Cancelled: 'bg-slate-100 text-slate-700',
     Ready: 'bg-cyan-50 text-cyan-700',
     'Not applicable': 'bg-slate-100 text-slate-600',
   };
@@ -64,7 +72,19 @@ export const SalesOrdersPage: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [expandedOrder, setExpandedOrder] = useState('');
+  const [deleteTargetOrder, setDeleteTargetOrder] = useState<SalesOrder | null>(null);
+  const [syncShipmentTargetOrder, setSyncShipmentTargetOrder] = useState<SalesOrder | null>(null);
+  const [syncingShipment, setSyncingShipment] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [ozonTargetOrder, setOzonTargetOrder] = useState<SalesOrder | null>(null);
+  const [syncingOzon, setSyncingOzon] = useState(false);
+  const [showImportOzonModal, setShowImportOzonModal] = useState(false);
+  const [showReviewQueueModal, setShowReviewQueueModal] = useState(false);
+  const [viewingParcelOrder, setViewingParcelOrder] = useState<SalesOrder | null>(null);
+  const [ozonSyncData, setOzonSyncData] = useState<OzonSyncStatusData | null>(null);
   const [customerForm, setCustomerForm] = useState({ first_name: '', last_name: '', email: '', phone: '', address: '' });
   const requestId = useRef(0);
   const [orderForm, setOrderForm] = useState({
@@ -77,8 +97,9 @@ export const SalesOrdersPage: React.FC = () => {
     notes: '',
     delivery_company_id: '',
     tracking_number: '',
-    shipping_cost: 0,
-    cod_amount: 0,
+    shipping_cost: '',
+    customer_shipping_charge: '',
+    cod_amount: '',
   });
 
   const refresh = useCallback(async () => {
@@ -87,13 +108,17 @@ export const SalesOrdersPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const [nextOrders, nextCustomers] = await Promise.all([
+      const [nextOrders, nextCustomers, ozonStatus] = await Promise.all([
         salesService.orders(workspaceId),
         salesService.customers(workspaceId),
+        salesService.getOzonSyncStatus(workspaceId).catch(() => null),
       ]);
       if (currentRequest !== requestId.current) return;
       setOrders(nextOrders);
       setCustomers(nextCustomers);
+      if (ozonStatus) {
+        setOzonSyncData(ozonStatus);
+      }
       setLoadedWorkspaceId(workspaceId);
       setOrderForm((form) => ({
         ...form,
@@ -123,6 +148,7 @@ export const SalesOrdersPage: React.FC = () => {
     Delivered: 0,
     Returned: 0,
     Rejected: 0,
+    Cancelled: 0,
   };
   for (const status of ORDER_STATUSES) counts[status] = workspaceOrders.filter((order) => order.status === status).length;
 
@@ -145,6 +171,105 @@ export const SalesOrdersPage: React.FC = () => {
       setError(cause instanceof Error ? cause.message : 'The sales record could not be saved.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleOrderStatusChange = async (targetOrder: SalesOrder, newStatus: OrderStatus) => {
+    if (newStatus === 'Delivered') {
+      const shipment = targetOrder.shipments[0];
+      if (shipment && shipment.status !== 'Delivered') {
+        setSyncShipmentTargetOrder(targetOrder);
+        return;
+      }
+    }
+    await perform(() => salesService.updateOrderStatus(workspaceId, targetOrder.id, newStatus));
+  };
+
+  const handleConfirmSyncShipment = async (targetOrder: SalesOrder, syncShipment: boolean) => {
+    if (!workspaceId) return;
+    setSyncingShipment(true);
+    setError('');
+    try {
+      await salesService.updateOrderStatus(workspaceId, targetOrder.id, 'Delivered', syncShipment);
+      setSyncShipmentTargetOrder(null);
+      setSuccessMessage(
+        syncShipment
+          ? `Order ${targetOrder.order_number} and carrier shipment updated to Delivered.`
+          : `Order ${targetOrder.order_number} marked Delivered.`
+      );
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to update order status.');
+    } finally {
+      setSyncingShipment(false);
+    }
+  };
+
+  const handleConfirmDelete = async (order: SalesOrder) => {
+    if (!workspaceId) return;
+    setDeleting(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      await salesService.deleteOrder(workspaceId, order.id);
+      setDeleteTargetOrder(null);
+      if (expandedOrder === order.id) setExpandedOrder('');
+      setSuccessMessage(`Order ${order.order_number} was successfully deleted.`);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to delete order.');
+      setDeleteTargetOrder(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleConfirmCancel = async (order: SalesOrder) => {
+    if (!workspaceId) return;
+    setCancelling(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      await salesService.updateOrderStatus(workspaceId, order.id, 'Cancelled');
+      setDeleteTargetOrder(null);
+      setSuccessMessage(`Order ${order.order_number} has been cancelled.`);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to cancel order.');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleSyncAllOzonTracking = async () => {
+    if (!workspaceId) return;
+    setSyncingOzon(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      const res = await salesService.syncOzonTracking(workspaceId);
+      setSuccessMessage(res.message);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to synchronize Ozon tracking.');
+    } finally {
+      setSyncingOzon(false);
+    }
+  };
+
+  const handleSyncSingleOzonTracking = async (orderId: string) => {
+    if (!workspaceId) return;
+    setSyncingOzon(true);
+    setError('');
+    setSuccessMessage('');
+    try {
+      const res = await salesService.syncOzonTracking(workspaceId, orderId);
+      setSuccessMessage(res.message);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Unable to refresh Ozon tracking for this order.');
+    } finally {
+      setSyncingOzon(false);
     }
   };
 
@@ -171,7 +296,8 @@ export const SalesOrdersPage: React.FC = () => {
       ? [{ name: orderForm.item_name.trim(), quantity: Number(orderForm.quantity), unit_price: Number(orderForm.unit_price) }]
       : [];
     const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-    const total = subtotal + (Number(orderForm.shipping_cost) || 0);
+    const customerShippingCharge = Number(orderForm.customer_shipping_charge);
+    const total = subtotal + customerShippingCharge;
     const input: SalesOrderInput = {
       customer_id: orderForm.customer_id,
       payment_status: orderForm.payment_status,
@@ -184,8 +310,9 @@ export const SalesOrdersPage: React.FC = () => {
       shipment: {
         delivery_company_id: orderForm.delivery_company_id.trim() || undefined,
         tracking_number: orderForm.tracking_number.trim() || undefined,
-        shipping_cost: Number(orderForm.shipping_cost) || 0,
-        cod_amount: Number(orderForm.cod_amount) || 0,
+        customer_shipping_charge: customerShippingCharge,
+        ...(orderForm.shipping_cost !== '' ? { shipping_cost: Number(orderForm.shipping_cost) } : {}),
+        ...(orderForm.cod_amount !== '' ? { cod_amount: Number(orderForm.cod_amount) } : {}),
         payment_collection_status: 'Pending',
       },
     };
@@ -193,13 +320,13 @@ export const SalesOrdersPage: React.FC = () => {
       await salesService.createOrder(workspaceId, input);
       setOrderForm((form) => ({
         ...form, item_name: '', quantity: 1, unit_price: 0, source: '', notes: '',
-        delivery_company_id: '', tracking_number: '', shipping_cost: 0, cod_amount: 0,
+        delivery_company_id: '', tracking_number: '', shipping_cost: '', customer_shipping_charge: '', cod_amount: '',
       }));
       setShowOrderForm(false);
     });
   };
 
-  const changeShipment = async (shipmentId: string, field: string, value: string | number) => {
+  const changeShipment = async (shipmentId: string, field: string, value: string | number | null) => {
     if (!workspaceId) return;
     await perform(() => salesService.updateShipment(workspaceId, shipmentId, { [field]: value }));
   };
@@ -215,20 +342,117 @@ export const SalesOrdersPage: React.FC = () => {
           <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Sales &amp; Orders</h1>
           <p className="mt-1 text-sm text-slate-500">Manage customer orders, payment and delivery progress in one place.</p>
         </div>
-        <button type="button" className={buttonClass} disabled={loading} onClick={() => setShowOrderForm((value) => !value)}>
-          {showOrderForm ? <X size={16} /> : <Plus size={16} />}
-          {showOrderForm ? 'Close form' : 'Create order'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setShowImportOzonModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-2xs"
+            title="Import and reconcile parcels exported from Ozon Express website"
+          >
+            <Upload size={15} className="text-slate-500" />
+            Import Ozon CSV
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => setShowReviewQueueModal(true)}
+            className="relative inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition-colors shadow-2xs"
+            title="Review unmatched inbound Ozon parcels"
+          >
+            <Truck size={15} className="text-violet-600" />
+            Ozon Review Queue
+            {(ozonSyncData?.summary.unmatched_review_queue || 0) > 0 && (
+              <span className="ml-1 rounded-full bg-violet-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {ozonSyncData?.summary.unmatched_review_queue}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            disabled={loading || syncingOzon}
+            onClick={() => void handleSyncAllOzonTracking()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-2xs"
+            title="Synchronize tracking status with Ozon Express for all shipments"
+          >
+            <RefreshCw size={15} className={syncingOzon ? 'animate-spin text-violet-600' : 'text-slate-500'} />
+            {syncingOzon ? 'Syncing Ozon…' : 'Sync Ozon'}
+          </button>
+          <button type="button" className={buttonClass} disabled={loading} onClick={() => setShowOrderForm((value) => !value)}>
+            {showOrderForm ? <X size={16} /> : <Plus size={16} />}
+            {showOrderForm ? 'Close form' : 'Create order'}
+          </button>
+        </div>
       </header>
 
+      {/* General Commerce Metrics */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium text-slate-500">Orders</p><p className="mt-2 text-2xl font-bold text-slate-900">{workspaceOrders.length}</p><div className="mt-2 flex items-center gap-1 text-xs text-slate-500"><ShoppingBag size={14} /> All statuses</div></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium text-slate-500">Orders</p><p className="mt-2 text-2xl font-bold text-slate-900">{workspaceOrders.length}</p><div className="mt-2 flex items-center gap-1 text-xs text-slate-500"><ShoppingBag size={14} /> All commercial orders</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium text-slate-500">Pending</p><p className="mt-2 text-2xl font-bold text-amber-700">{counts.Pending}</p><div className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Clock3 size={14} /> Awaiting confirmation</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium text-slate-500">In delivery</p><p className="mt-2 text-2xl font-bold text-violet-700">{counts.Shipping}</p><div className="mt-2 flex items-center gap-1 text-xs text-slate-500"><Truck size={14} /> With carrier</div></div>
         <div className="rounded-xl border border-slate-200 bg-white p-4"><p className="text-xs font-medium text-slate-500">Delivered</p><p className="mt-2 text-2xl font-bold text-emerald-700">{counts.Delivered}</p><div className="mt-2 flex items-center gap-1 text-xs text-slate-500"><PackageCheck size={14} /> Completed orders</div></div>
       </div>
 
+      {/* Ozon Express Logistics & Financial Overview Banner */}
+      {ozonSyncData && (
+        <section className="rounded-xl border border-violet-200 bg-linear-to-r from-violet-50/60 via-white to-slate-50 p-4 shadow-xs">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-violet-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="rounded-lg bg-violet-700 p-2 text-white">
+                <Truck size={16} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-900">Ozon Express Logistics &amp; COD Overview</h3>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${ozonSyncData.is_dry_run ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                    {ozonSyncData.is_dry_run ? 'Simulation Mode (Dry-Run)' : 'Live Connected'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {ozonSyncData.last_successful_sync
+                    ? `Last synchronized: ${new Date(ozonSyncData.last_successful_sync).toLocaleTimeString()} (${ozonSyncData.parcels_checked_count} parcels verified)`
+                    : 'Scheduled background sync active • Hourly updates'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="rounded-md bg-amber-50 border border-amber-200 px-2 py-1 font-medium text-amber-800">
+                Private Courier: <strong>{ozonSyncData.summary.private_courier_count}</strong> (Khalid Nait Lmouden)
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">Total Ozon</span>
+              <strong className="text-base text-slate-900">{ozonSyncData.summary.total_ozon_shipments}</strong>
+            </div>
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">In Transit</span>
+              <strong className="text-base text-blue-700">{ozonSyncData.summary.in_transit}</strong>
+            </div>
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">Delivered</span>
+              <strong className="text-base text-emerald-700">{ozonSyncData.summary.delivered}</strong>
+            </div>
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">Returned / Refused</span>
+              <strong className="text-base text-rose-700">{ozonSyncData.summary.returned_refused}</strong>
+            </div>
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">Expected COD</span>
+              <strong className="text-base text-slate-900">{money(ozonSyncData.summary.total_expected_cod, currentWorkspace.currency || 'MAD')}</strong>
+            </div>
+            <div className="rounded-lg bg-white p-2.5 border border-slate-100">
+              <span className="text-slate-500 block">Delivery Fees</span>
+              <strong className="text-base text-violet-700">{money(ozonSyncData.summary.total_delivery_fees, currentWorkspace.currency || 'MAD')}</strong>
+            </div>
+          </div>
+        </section>
+      )}
+
       {error && <div role="alert" className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
+      {successMessage && <div role="status" className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><span>{successMessage}</span><button type="button" onClick={() => setSuccessMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 
       {showOrderForm && <form onSubmit={createOrder} className="rounded-xl border border-violet-200 bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold text-slate-900">New order</h2><button type="button" className="text-sm font-medium text-violet-700 hover:text-violet-900" onClick={() => setShowCustomerForm((value) => !value)}>+ Add customer</button></div>
@@ -251,13 +475,14 @@ export const SalesOrdersPage: React.FC = () => {
           <label><span className={labelClass}>Payment status</span><select className={inputClass} value={orderForm.payment_status} onChange={(event) => setOrderForm({ ...orderForm, payment_status: event.target.value as PaymentStatus })}>{PAYMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
           <label><span className={labelClass}>Delivery company ID</span><input className={inputClass} value={orderForm.delivery_company_id} onChange={(event) => setOrderForm({ ...orderForm, delivery_company_id: event.target.value })} placeholder="For future carrier integration" /></label>
           <label><span className={labelClass}>Tracking number</span><input className={inputClass} value={orderForm.tracking_number} onChange={(event) => setOrderForm({ ...orderForm, tracking_number: event.target.value })} /></label>
-          <label><span className={labelClass}>Shipping cost</span><input type="number" min="0" step="0.01" className={inputClass} value={orderForm.shipping_cost} onChange={(event) => setOrderForm({ ...orderForm, shipping_cost: Number(event.target.value) })} /></label>
-          <label><span className={labelClass}>COD amount</span><input type="number" min="0" step="0.01" className={inputClass} value={orderForm.cod_amount} onChange={(event) => setOrderForm({ ...orderForm, cod_amount: Number(event.target.value) })} /></label>
+          <label><span className={labelClass}>Customer-paid shipping charge *</span><input required type="number" min="0" step="0.01" className={inputClass} value={orderForm.customer_shipping_charge} onChange={(event) => setOrderForm({ ...orderForm, customer_shipping_charge: event.target.value })} /></label>
+          <label><span className={labelClass}>Courier / fulfillment cost</span><input type="number" min="0" step="0.01" className={inputClass} value={orderForm.shipping_cost} onChange={(event) => setOrderForm({ ...orderForm, shipping_cost: event.target.value })} /></label>
+          <label><span className={labelClass}>Expected COD collection</span><input type="number" min="0" step="0.01" className={inputClass} value={orderForm.cod_amount} onChange={(event) => setOrderForm({ ...orderForm, cod_amount: event.target.value })} /></label>
           <label><span className={labelClass}>Order source</span><input className={inputClass} value={orderForm.source} onChange={(event) => setOrderForm({ ...orderForm, source: event.target.value })} placeholder="Website, social, store…" /></label>
           <label className="sm:col-span-2 lg:col-span-3"><span className={labelClass}>Notes</span><input className={inputClass} value={orderForm.notes} onChange={(event) => setOrderForm({ ...orderForm, notes: event.target.value })} /></label>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-          <p className="text-sm text-slate-500">New orders start in <strong className="text-amber-700">Pending</strong>. Total with shipping: <strong className="text-slate-900">{money(orderForm.quantity * orderForm.unit_price + (Number(orderForm.shipping_cost) || 0), currentWorkspace.currency || 'USD')}</strong></p>
+          <p className="text-sm text-slate-500">New orders start in <strong className="text-amber-700">Pending</strong>. Customer order total (products + customer-paid shipping): <strong className="text-slate-900">{orderForm.customer_shipping_charge === '' ? 'Enter shipping charge to calculate' : money(orderForm.quantity * orderForm.unit_price + Number(orderForm.customer_shipping_charge), currentWorkspace.currency || 'USD')}</strong>. COD is expected collection only, not proof of payment.</p>
           <button type="submit" className={buttonClass} disabled={saving || loading || !workspaceCustomers.length}>{saving ? 'Saving…' : 'Save order'}</button>
         </div>
       </form>}
@@ -280,31 +505,219 @@ export const SalesOrdersPage: React.FC = () => {
             const expanded = expandedOrder === order.id;
             return <article key={order.id} className="px-4 py-4 md:px-5">
               <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr_0.9fr_1fr_auto] lg:items-center">
-                <div className="flex min-w-0 items-start gap-3"><div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><ShoppingBag size={17} /></div><div className="min-w-0"><p className="truncate font-semibold text-slate-900">{order.order_number}</p><p className="mt-1 text-xs text-slate-500">{new Date(order.created_at).toLocaleDateString()} · {order.items?.length || 0} items</p></div></div>
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                    <ShoppingBag size={17} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate font-semibold text-slate-900">{order.order_number}</p>
+                      {shipment?.delivery_company_id?.toLowerCase() === 'ozon' && shipment?.tracking_number && (
+                        <button
+                          type="button"
+                          onClick={() => setViewingParcelOrder(order)}
+                          className="inline-flex items-center gap-1 rounded bg-violet-100/70 hover:bg-violet-200/80 px-1.5 py-0.5 text-[10px] font-semibold text-violet-800 transition-colors"
+                          title={`Click to view Ozon Express details: ${shipment.tracking_number}`}
+                        >
+                          <Truck size={10} /> Ozon: {shipment.tracking_number}
+                        </button>
+                      )}
+                      {shipment?.delivery_company_id && shipment.delivery_company_id.toLowerCase().includes('khalid') && (
+                        <span className="inline-flex items-center gap-1 rounded bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900" title="Private Courier Delivery (Khalid Nait Lmouden) - Excluded from Ozon sync">
+                          <UserRound size={10} /> Private: {shipment.delivery_company_id}
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{new Date(order.created_at).toLocaleDateString()} · {order.items?.length || 0} items</p>
+                  </div>
+                </div>
                 <div className="min-w-0"><p className="flex items-center gap-1.5 text-sm font-medium text-slate-800"><UserRound size={14} className="shrink-0 text-slate-400" />{customerName(order.customer)}</p><p className="mt-1 truncate pl-5 text-xs text-slate-500">{order.customer.email || order.customer.phone || 'No contact details'}</p></div>
-                <div><p className="font-semibold text-slate-900">{money(order.total, order.currency)}</p><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(order.payment_status)}`}>{order.payment_status}</span></div>
-                <div className="flex flex-col items-start gap-2"><select aria-label={`Order ${order.order_number} status`} disabled={saving} className={`max-w-full rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none ring-1 ring-inset ring-slate-200 ${statusClass(order.status)}`} value={order.status} onChange={(event) => void perform(() => salesService.updateOrderStatus(workspaceId, order.id, event.target.value as OrderStatus))}>{ORDER_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><select aria-label={`Order ${order.order_number} payment status`} disabled={saving} className="max-w-full border-0 bg-transparent p-0 text-xs text-slate-500 outline-none" value={order.payment_status} onChange={(event) => void perform(() => salesService.updatePaymentStatus(workspaceId, order.id, event.target.value as PaymentStatus))}>{PAYMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></div>
-                <button type="button" className="inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" aria-expanded={expanded} onClick={() => setExpandedOrder(expanded ? '' : order.id)}>{expanded ? 'Close' : 'Details'}<ChevronDown size={14} className={expanded ? 'rotate-180' : ''} /></button>
+                <div><p className="font-semibold text-slate-900">{money(order.total, order.currency)}</p><span className="block text-[10px] text-slate-500">Recorded customer order total</span><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass(order.payment_status)}`}>Payment: {order.payment_status}</span></div>
+                <div className="flex flex-col items-start gap-1.5">
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Order fulfillment</span>
+                    <select
+                      aria-label={`Order ${order.order_number} fulfillment status`}
+                      disabled={saving || syncingShipment}
+                      className={`max-w-full rounded-full border-0 px-2.5 py-1 text-xs font-semibold outline-none ring-1 ring-inset ring-slate-200 ${statusClass(order.status)}`}
+                      value={order.status}
+                      onChange={(event) => void handleOrderStatusChange(order, event.target.value as OrderStatus)}
+                    >
+                      {ORDER_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Customer payment</span>
+                    <select
+                      aria-label={`Order ${order.order_number} customer payment status`}
+                      disabled={saving || syncingShipment}
+                      className="max-w-full border-0 bg-transparent p-0 text-xs text-slate-600 outline-none"
+                      value={order.payment_status}
+                      onChange={(event) => void perform(() => salesService.updatePaymentStatus(workspaceId, order.id, event.target.value as PaymentStatus))}
+                    >
+                      {PAYMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {shipment && (
+                    <button
+                      type="button"
+                      onClick={() => setViewingParcelOrder(order)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                      title="View parcel delivery & COD details"
+                    >
+                      <Truck size={12} className="text-slate-500" /> Parcel
+                    </button>
+                  )}
+                  {(!shipment?.delivery_company_id || shipment.delivery_company_id.toLowerCase() !== 'ozon' || !shipment.tracking_number) && order.status !== 'Delivered' && order.status !== 'Cancelled' && (
+                    <button
+                      type="button"
+                      disabled={saving || syncingOzon}
+                      onClick={() => setOzonTargetOrder(order)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50 transition-colors"
+                      title="Send this order to Ozon Express"
+                    >
+                      <Truck size={13} /> Send to Ozon
+                    </button>
+                  )}
+                  {shipment?.delivery_company_id?.toLowerCase() === 'ozon' && shipment.tracking_number && (
+                    <button
+                      type="button"
+                      disabled={saving || syncingOzon}
+                      onClick={() => void handleSyncSingleOzonTracking(order.id)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                      title="Refresh tracking status from Ozon Express"
+                    >
+                      <RefreshCw size={12} className={syncingOzon ? 'animate-spin text-violet-600' : 'text-slate-500'} /> Sync
+                    </button>
+                  )}
+                  <button type="button" className="inline-flex items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100" aria-expanded={expanded} onClick={() => setExpandedOrder(expanded ? '' : order.id)}>{expanded ? 'Close' : 'Details'}<ChevronDown size={14} className={expanded ? 'rotate-180' : ''} /></button>
+                </div>
               </div>
               {expanded && <div className="mt-4 grid gap-5 rounded-lg bg-slate-50 p-4 lg:grid-cols-2">
-                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800"><Truck size={15} /> Shipment &amp; collection</h3>{shipment ? <div className="grid gap-3 sm:grid-cols-2">
-                  <label><span className={labelClass}>Shipment status</span><select className={inputClass} disabled={saving} value={shipment.status} onChange={(event) => void changeShipment(shipment.id, 'status', event.target.value)}>{SHIPMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800"><Truck size={15} /> Shipment &amp; courier remittance</h3>{shipment ? <div className="grid gap-3 sm:grid-cols-2">
+                  {order.status === 'Delivered' && shipment.status !== 'Delivered' && (
+                    <div className="sm:col-span-2 mb-1 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-900">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <AlertTriangle size={15} className="shrink-0 text-amber-600" />
+                        <span>Order is <strong>Delivered</strong>, but carrier shipment is <strong>{shipment.status}</strong>.</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => void changeShipment(shipment.id, 'status', 'Delivered')}
+                        className="rounded-md bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        Sync carrier delivery
+                      </button>
+                    </div>
+                  )}
+                  <label><span className={labelClass}>Carrier delivery status</span><select className={inputClass} disabled={saving} value={shipment.status} onChange={(event) => void changeShipment(shipment.id, 'status', event.target.value)}>{SHIPMENT_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
                   <label><span className={labelClass}>Delivery company ID</span><input className={inputClass} defaultValue={shipment.delivery_company_id || ''} onBlur={(event) => { if (event.target.value !== (shipment.delivery_company_id || '')) void changeShipment(shipment.id, 'delivery_company_id', event.target.value); }} /></label>
                   <label><span className={labelClass}>Tracking number</span><input className={inputClass} defaultValue={shipment.tracking_number || ''} onBlur={(event) => { if (event.target.value !== (shipment.tracking_number || '')) void changeShipment(shipment.id, 'tracking_number', event.target.value); }} /></label>
-                  <label><span className={labelClass}>Shipping cost</span><input type="number" min="0" step="0.01" className={inputClass} defaultValue={shipment.shipping_cost} onBlur={(event) => { if (event.target.value !== shipment.shipping_cost) void changeShipment(shipment.id, 'shipping_cost', Number(event.target.value)); }} /></label>
-                  <label><span className={labelClass}>COD amount</span><input type="number" min="0" step="0.01" className={inputClass} defaultValue={shipment.cod_amount} onBlur={(event) => { if (event.target.value !== shipment.cod_amount) void changeShipment(shipment.id, 'cod_amount', Number(event.target.value)); }} /></label>
-                  <label><span className={labelClass}>Payment collected</span><select className={inputClass} value={shipment.payment_collection_status} onChange={(event) => void changeShipment(shipment.id, 'payment_collection_status', event.target.value)}>{COLLECTION_STATUSES.map((status) => <option key={status}>{status}</option>)}</select></label>
+                  <label><span className={labelClass}>Courier / fulfillment cost</span><input type="number" min="0" step="0.01" className={inputClass} defaultValue={shipment.shipping_cost ?? ''} onBlur={(event) => { if (event.target.value !== (shipment.shipping_cost ?? '')) void changeShipment(shipment.id, 'shipping_cost', event.target.value === '' ? null : Number(event.target.value)); }} /></label>
+                  <label><span className={labelClass}>Customer-paid shipping charge</span><input type="number" min="0" step="0.01" className={inputClass} defaultValue={shipment.customer_shipping_charge ?? ''} onBlur={(event) => { if (event.target.value !== (shipment.customer_shipping_charge ?? '')) void changeShipment(shipment.id, 'customer_shipping_charge', event.target.value === '' ? null : Number(event.target.value)); }} /></label>
+                  <label><span className={labelClass}>Expected COD collection</span><input type="number" min="0" step="0.01" className={inputClass} defaultValue={shipment.cod_amount ?? ''} onBlur={(event) => { if (event.target.value !== (shipment.cod_amount ?? '')) void changeShipment(shipment.id, 'cod_amount', event.target.value === '' ? null : Number(event.target.value)); }} /></label>
+                  <label className="sm:col-span-2"><span className={labelClass}>Courier COD remittance status</span><select className={inputClass} value={shipment.payment_collection_status} onChange={(event) => void changeShipment(shipment.id, 'payment_collection_status', event.target.value)}>{COLLECTION_STATUSES.map((status) => <option key={status}>{status}</option>)}</select><span className="mt-1 block text-[10px] text-slate-500">Tracks carrier funds remittance to your merchant account. Decoupled from customer payment confirmation.</span></label>
+                  {order.payment_status === 'Paid' && shipment.payment_collection_status !== 'Collected' && (
+                    <div className="sm:col-span-2 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] text-slate-600">
+                      <strong className="text-slate-800">Payment vs. Remittance:</strong> Customer payment is recorded as <em>Paid</em>. Courier COD remittance remains <em>{shipment.payment_collection_status}</em> until cash funds are remitted by the carrier.
+                    </div>
+                  )}
                 </div> : <p className="text-sm text-slate-500">No shipment record.</p>}
-                  {order.items && order.items.length > 0 && <div className="mt-4 space-y-1 border-t border-slate-200 pt-3 text-xs text-slate-600">{order.items.map((item, index) => <p key={`${item.name}-${index}`} className="flex justify-between gap-3"><span>{item.quantity} × {item.name}</span><span>{money(item.quantity * item.unit_price, order.currency)}</span></p>)}</div>}
+                  {order.items && order.items.length > 0 && <div className="mt-4 space-y-1 border-t border-slate-200 pt-3 text-xs text-slate-600">{order.items.map((item, index) => <p key={`${item.name}-${index}`} className="flex justify-between gap-3"><span>{item.quantity} × {item.name}</span><span>{money(item.quantity * item.unit_price, order.currency)}</span></p>)}<p className="flex justify-between gap-3"><span>Recorded customer shipping charge</span><span>{shipment?.customer_shipping_charge == null ? 'Unavailable' : money(shipment.customer_shipping_charge, order.currency)}</span></p><p className="flex justify-between gap-3"><span>Recorded customer order total</span><span>{money(order.total, order.currency)}</span></p><p className="mt-2 text-[10px] text-slate-500">Expected COD {shipment?.cod_amount == null ? 'Unavailable' : money(shipment.cod_amount, order.currency)} is not evidence of payment collected. Older orders may not have separately recorded customer shipping or courier charges.</p></div>}
                 </div>
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800"><ArrowDownUp size={15} /> Order status history</h3><ol className="space-y-3">{[...order.status_history].reverse().map((event) => <li key={event.id} className="relative border-l border-slate-200 pl-4 text-xs last:border-l-0"><span className="absolute -left-[5px] top-0.5 h-2 w-2 rounded-full bg-violet-500" /><p className="font-medium text-slate-800">{event.from_status ? `${event.from_status} → ` : ''}{event.to_status}</p><p className="mt-0.5 text-slate-500">{new Date(event.created_at).toLocaleString()} · {event.source === 'shipment' ? 'Shipment update' : event.source === 'created' ? 'Order created' : 'Manual update'}</p></li>)}</ol>
                   <div className="mt-4 flex items-center gap-2 text-xs text-slate-500"><CircleDollarSign size={14} />{order.source || 'Source not specified'}{order.notes ? ` · ${order.notes}` : ''}</div>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3 lg:col-span-2">
+                  <div className="text-xs text-slate-500">
+                    Order controls &amp; data management
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {order.status !== 'Cancelled' && (
+                      <button
+                        type="button"
+                        disabled={saving || deleting || cancelling}
+                        onClick={() => void handleConfirmCancel(order)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        <Ban size={14} /> Cancel order
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={saving || deleting || cancelling}
+                      onClick={() => setDeleteTargetOrder(order)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      <Trash2 size={14} /> Delete order
+                    </button>
+                  </div>
                 </div>
               </div>}
             </article>;
           })}
         </div>}
       </section>
+
+      <DeleteOrderModal
+        isOpen={!!deleteTargetOrder}
+        order={deleteTargetOrder}
+        deleting={deleting}
+        cancelling={cancelling}
+        onClose={() => setDeleteTargetOrder(null)}
+        onConfirmDelete={handleConfirmDelete}
+        onConfirmCancel={handleConfirmCancel}
+      />
+
+      <SyncShipmentModal
+        isOpen={!!syncShipmentTargetOrder}
+        order={syncShipmentTargetOrder}
+        saving={syncingShipment}
+        onClose={() => setSyncShipmentTargetOrder(null)}
+        onConfirmSync={handleConfirmSyncShipment}
+      />
+
+      {ozonTargetOrder && (
+        <SendToOzonModal
+          order={ozonTargetOrder}
+          workspaceId={workspaceId}
+          onClose={() => setOzonTargetOrder(null)}
+          onSuccess={(_updatedOrder, message) => {
+            setSuccessMessage(message);
+            void refresh();
+          }}
+        />
+      )}
+
+      <ImportOzonParcelsModal
+        workspaceId={workspaceId}
+        isOpen={showImportOzonModal}
+        onClose={() => setShowImportOzonModal(false)}
+        onSuccess={(message) => {
+          setSuccessMessage(message);
+          void refresh();
+        }}
+      />
+
+      <OzonReviewQueueModal
+        workspaceId={workspaceId}
+        isOpen={showReviewQueueModal}
+        onClose={() => setShowReviewQueueModal(false)}
+        openOrders={orders}
+        onOrderUpdated={() => {
+          void refresh();
+        }}
+      />
+
+      {viewingParcelOrder && (
+        <OzonParcelDetailsModal
+          order={viewingParcelOrder}
+          onClose={() => setViewingParcelOrder(null)}
+        />
+      )}
     </div>
   );
 };

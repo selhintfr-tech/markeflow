@@ -16,6 +16,8 @@ class StoreProjectRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
+            'objectives' => ['sometimes', 'array', 'max:20'],
+            'objectives.*' => ['required', 'string', 'max:500'],
             'status' => ['sometimes', 'required', 'string', Rule::in(Project::STATUSES)],
             'start_date' => ['required', 'date'],
             'end_date' => ['required', 'date', 'after_or_equal:start_date'],

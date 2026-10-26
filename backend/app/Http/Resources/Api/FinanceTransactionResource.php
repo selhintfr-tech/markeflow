@@ -12,7 +12,10 @@ class FinanceTransactionResource extends JsonResource
         return [
             'id' => $this->id,
             'workspace_id' => $this->workspace_id,
+            'campaign_id' => $this->campaign_id,
+            'order_id' => $this->order_id,
             'created_by' => $this->created_by,
+            'creator_name' => $this->creator?->name,
             'type' => $this->type,
             'category' => $this->category,
             'description' => $this->description,

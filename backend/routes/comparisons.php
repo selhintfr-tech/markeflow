@@ -9,4 +9,5 @@ Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])
     ->group(function (): void {
         Route::get('/periods', [ComparisonController::class, 'periods'])->name('periods');
         Route::get('/campaigns', [ComparisonController::class, 'campaigns'])->name('campaigns');
+        Route::get('/campaign-performance', [ComparisonController::class, 'campaignPerformance'])->name('campaign-performance');
     });

@@ -13,6 +13,35 @@ export interface AnalyticsOverview {
   } | null;
   campaign_financials: { budget: string | number; spend: string | number; revenue: string | number; return_on_spend: number | null } | null;
   finance: { income: string | number; expenses: string | number; profit: number; budgeted_expenses: string | number | null } | null;
+  advertising?: {
+    spend: number;
+    workspace_total_spend: number;
+    attributed_spend: number;
+    unattributed_spend: number;
+    budget: number | null;
+    transaction_count: number;
+    channel_breakdown?: Array<{
+      channel: string;
+      spend: number;
+      attributed_spend: number;
+      unattributed_spend: number;
+      transaction_count: number;
+    }>;
+  } | null;
+  sales?: {
+    total_orders: number;
+    delivered_orders: number;
+    pending_orders: number;
+    operational_order_total: number;
+    delivered_order_total: number;
+    pending_order_total: number;
+    sales_revenue: number;
+    production_costs: number;
+    delivery_costs: number;
+    returns_costs: number;
+    realized_net_profit: number;
+    customers_count: number;
+  } | null;
   definitions: Record<string, string>;
 }
 
@@ -25,7 +54,9 @@ export interface SavedReport {
   workspace_id: string;
   created_by: number;
   name: string;
-  type: 'overview' | 'campaigns' | 'tasks' | 'crm' | 'finance' | 'timeseries';
+  type: 'overview' | 'campaigns' | 'tasks' | 'crm' | 'finance' | 'timeseries' | 'projects';
+  status: 'Ready' | 'In Review' | 'Draft' | 'Archived' | null;
+  created_by_name: string | null;
   from_date: string | null;
   to_date: string | null;
   filters: Record<string, string>;
@@ -55,11 +86,28 @@ export interface CampaignComparison {
   metrics: Record<string, { campaign_a: number; campaign_b: number; change: number; percent_change: number | null }>;
 }
 
+export interface CampaignPerformanceComparison {
+  period: { from: string; to: string };
+  currency: string;
+  campaign_a: { id: string; name: string };
+  campaign_b: { id: string; name: string };
+  definition: string;
+  metrics: Record<string, { campaign_a: number; campaign_b: number; change: number; percent_change: number | null }>;
+}
+
 export const analyticsApi = {
-  overview: (workspaceId: string, from: string, to: string) =>
-    apiRequest<{ data: AnalyticsOverview }>(`/api/analytics/overview?from=${from}&to=${to}`, { workspaceId }).then((result) => result.data),
-  timeseries: (workspaceId: string, from: string, to: string) =>
-    apiRequest<{ data: TimeSeries }>(`/api/analytics/timeseries?from=${from}&to=${to}`, { workspaceId }).then((result) => result.data),
+  overview: (workspaceId: string, from: string, to: string, campaignId?: string, channel?: string) => {
+    const params = new URLSearchParams({ from, to });
+    if (campaignId && campaignId !== 'all') params.set('campaign_id', campaignId);
+    if (channel && channel !== 'all') params.set('channel', channel);
+    return apiRequest<{ data: AnalyticsOverview }>(`/api/analytics/overview?${params}`, { workspaceId }).then((result) => result.data);
+  },
+  timeseries: (workspaceId: string, from: string, to: string, campaignId?: string, channel?: string) => {
+    const params = new URLSearchParams({ from, to });
+    if (campaignId && campaignId !== 'all') params.set('campaign_id', campaignId);
+    if (channel && channel !== 'all') params.set('channel', channel);
+    return apiRequest<{ data: TimeSeries }>(`/api/analytics/timeseries?${params}`, { workspaceId }).then((result) => result.data);
+  },
   async reports(workspaceId: string): Promise<SavedReport[]> {
     const query = new URLSearchParams({ per_page: '100', page: '1' });
     const records: SavedReport[] = [];
@@ -96,16 +144,22 @@ export const analyticsApi = {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
-  comparePeriods: (workspaceId: string, from: string, to: string, previousFrom?: string, previousTo?: string) => {
+  comparePeriods: (workspaceId: string, from: string, to: string, previousFrom?: string, previousTo?: string, campaignId?: string, channel?: string) => {
     const params = new URLSearchParams({ from, to });
     if (previousFrom && previousTo) {
       params.set('previous_from', previousFrom);
       params.set('previous_to', previousTo);
     }
+    if (campaignId && campaignId !== 'all') params.set('campaign_id', campaignId);
+    if (channel && channel !== 'all') params.set('channel', channel);
     return apiRequest<{ data: PeriodComparison }>(`/api/comparisons/periods?${params}`, { workspaceId }).then((result) => result.data);
   },
   compareCampaigns: (workspaceId: string, campaignA: string, campaignB: string) => {
     const params = new URLSearchParams({ campaign_a: campaignA, campaign_b: campaignB });
     return apiRequest<{ data: CampaignComparison }>(`/api/comparisons/campaigns?${params}`, { workspaceId }).then((result) => result.data);
+  },
+  compareCampaignPerformance: (workspaceId: string, campaignA: string, campaignB: string, from: string, to: string) => {
+    const params = new URLSearchParams({ campaign_a: campaignA, campaign_b: campaignB, from, to });
+    return apiRequest<{ data: CampaignPerformanceComparison }>(`/api/comparisons/campaign-performance?${params}`, { workspaceId }).then((result) => result.data);
   },
 };

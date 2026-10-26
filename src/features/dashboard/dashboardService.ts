@@ -34,6 +34,39 @@ export interface FinanceMetrics {
   budgeted_expenses: number | null;
 }
 
+export interface AdvertisingChannelBreakdown {
+  channel: string;
+  spend: number;
+  attributed_spend: number;
+  unattributed_spend: number;
+  transaction_count: number;
+}
+
+export interface AdvertisingMetrics {
+  spend: number;
+  workspace_total_spend: number;
+  attributed_spend: number;
+  unattributed_spend: number;
+  budget: number | null;
+  transaction_count: number;
+  channel_breakdown: AdvertisingChannelBreakdown[];
+}
+
+export interface SalesMetrics {
+  total_orders: number;
+  delivered_orders: number;
+  pending_orders: number;
+  operational_order_total: number;
+  delivered_order_total: number;
+  pending_order_total: number;
+  sales_revenue: number;
+  production_costs: number;
+  delivery_costs: number;
+  returns_costs: number;
+  realized_net_profit: number;
+  customers_count: number;
+}
+
 export interface AnalyticsOverview {
   projects: number | null;
   campaigns: number | null;
@@ -41,6 +74,8 @@ export interface AnalyticsOverview {
   crm: CrmMetrics | null;
   campaign_financials: CampaignFinancials | null;
   finance: FinanceMetrics | null;
+  advertising?: AdvertisingMetrics | null;
+  sales?: SalesMetrics | null;
   definitions?: Record<string, string>;
 }
 

@@ -3,6 +3,7 @@
 namespace App\Services\Meta;
 
 use Illuminate\Http\Client\Response;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 
@@ -12,7 +13,7 @@ class MetaMarketingApi
 
     private const TIMEOUT_SECONDS = 15;
 
-    private const MAX_PAGES = 20;
+    private const MAX_PAGE_RETRIES = 3;
 
     public function isConfigured(): bool
     {
@@ -31,7 +32,7 @@ class MetaMarketingApi
             'redirect_uri' => $this->requiredValue('META_OAUTH_REDIRECT_URI'),
             'state' => $state,
             'response_type' => 'code',
-            'scope' => implode(',', ['ads_read', 'read_insights']),
+            'scope' => 'ads_read',
         ]);
 
         return 'https://www.facebook.com/'.$this->version().'/dialog/oauth?'.$query;
@@ -43,12 +44,16 @@ class MetaMarketingApi
     public function exchangeCode(string $code): array
     {
         $this->requireConfigured();
-        $response = Http::acceptJson()->timeout(self::TIMEOUT_SECONDS)->get($this->graphUrl('oauth/access_token'), [
-            'client_id' => $this->requiredValue('META_APP_ID'),
-            'client_secret' => $this->requiredValue('META_APP_SECRET'),
-            'redirect_uri' => $this->requiredValue('META_OAUTH_REDIRECT_URI'),
-            'code' => $code,
-        ]);
+        try {
+            $response = Http::acceptJson()->timeout(self::TIMEOUT_SECONDS)->get($this->graphUrl('oauth/access_token'), [
+                'client_id' => $this->requiredValue('META_APP_ID'),
+                'client_secret' => $this->requiredValue('META_APP_SECRET'),
+                'redirect_uri' => $this->requiredValue('META_OAUTH_REDIRECT_URI'),
+                'code' => $code,
+            ]);
+        } catch (ConnectionException) {
+            throw new MetaApiException('Meta could not complete the authorization exchange. Try connecting again.', 502);
+        }
         $payload = $this->decode($response);
         $token = $payload['access_token'] ?? null;
         if (! is_string($token) || $token === '') {
@@ -59,7 +64,7 @@ class MetaMarketingApi
         $userId = isset($payload['user_id']) ? (string) $payload['user_id'] : null;
         $scopes = isset($payload['granted_scopes']) && is_string($payload['granted_scopes'])
             ? array_values(array_filter(explode(',', $payload['granted_scopes'])))
-            : ['ads_read', 'read_insights'];
+            : ['ads_read'];
 
         return [
             'access_token' => $token,
@@ -74,7 +79,7 @@ class MetaMarketingApi
      */
     public function adAccounts(string $accessToken): array
     {
-        $fields = 'id,name,account_id,currency,account_status';
+        $fields = 'id,name,account_id,currency,account_status,timezone_name,timezone_offset_hours_utc';
         $result = $this->pagedGet($this->graphUrl('me/adaccounts'), [
             'fields' => $fields,
             'limit' => 100,
@@ -91,6 +96,10 @@ class MetaMarketingApi
                 'account_id' => isset($account['account_id']) ? (string) $account['account_id'] : null,
                 'currency' => isset($account['currency']) ? (string) $account['currency'] : null,
                 'account_status' => isset($account['account_status']) ? (int) $account['account_status'] : null,
+                'timezone_name' => isset($account['timezone_name']) ? (string) $account['timezone_name'] : null,
+                'timezone_offset_hours_utc' => isset($account['timezone_offset_hours_utc'])
+                    ? $this->numeric($account['timezone_offset_hours_utc'])
+                    : null,
             ];
         }
 
@@ -132,13 +141,68 @@ class MetaMarketingApi
         return ['data' => $rows, 'truncated' => $result['truncated']];
     }
 
+    /**
+     * Retrieve all accessible account objects and maximum-range insights without
+     * combining measurements from different hierarchy levels.
+     *
+     * @return array{
+     *   campaigns: list<array<string, mixed>>,
+     *   ad_sets: list<array<string, mixed>>,
+     *   ads: list<array<string, mixed>>,
+     *   campaign_insights: list<array<string, mixed>>,
+     *   ad_set_insights: list<array<string, mixed>>,
+     *   ad_insights: list<array<string, mixed>>,
+     *   daily_ad_insights: list<array<string, mixed>>,
+     *   truncated: bool
+     * }
+     */
+    public function historicalAccountData(string $accessToken, string $accountId): array
+    {
+        if (! preg_match('/^act_[0-9]+$/', $accountId)) {
+            throw new InvalidArgumentException('A valid Meta ad account ID is required.');
+        }
+
+        $baseParameters = ['limit' => 100, 'access_token' => $accessToken];
+        $campaigns = $this->entityData($this->graphUrl($accountId.'/campaigns'), $baseParameters, [
+            'id', 'name', 'objective', 'status', 'effective_status', 'created_time', 'updated_time',
+        ]);
+        $adSets = $this->entityData($this->graphUrl($accountId.'/adsets'), $baseParameters, [
+            'id', 'name', 'campaign_id', 'status', 'effective_status', 'created_time', 'updated_time', 'start_time', 'end_time',
+        ]);
+        $ads = $this->entityData($this->graphUrl($accountId.'/ads'), $baseParameters, [
+            'id', 'name', 'campaign_id', 'adset_id', 'status', 'effective_status', 'created_time', 'updated_time',
+        ]);
+
+        $campaignInsights = $this->insightData($accessToken, $accountId, 'campaign', 'all_days');
+        $adSetInsights = $this->insightData($accessToken, $accountId, 'adset', 'all_days');
+        $adInsights = $this->insightData($accessToken, $accountId, 'ad', 'all_days');
+        $dailyAdInsights = $this->insightData($accessToken, $accountId, 'ad', '1');
+
+        return [
+            'campaigns' => $campaigns['data'],
+            'ad_sets' => $adSets['data'],
+            'ads' => $ads['data'],
+            'campaign_insights' => $campaignInsights['data'],
+            'ad_set_insights' => $adSetInsights['data'],
+            'ad_insights' => $adInsights['data'],
+            'daily_ad_insights' => $dailyAdInsights['data'],
+            'truncated' => $campaigns['truncated']
+                || $adSets['truncated']
+                || $ads['truncated']
+                || $campaignInsights['truncated']
+                || $adSetInsights['truncated']
+                || $adInsights['truncated']
+                || $dailyAdInsights['truncated'],
+        ];
+    }
+
     public function displayError(MetaApiException $exception): string
     {
         if ($exception->tokenInvalid) {
             return 'The Meta connection expired or was revoked. Disconnect and reconnect the advertising account.';
         }
         if (in_array($exception->metaCode, [10, 200], true)) {
-            return 'Meta denied this request. Confirm ads_read and read_insights access and that the Meta app has the required permissions.';
+            return 'Meta denied this request. Confirm ads_read access and that the Meta app has the required permission.';
         }
         if (in_array($exception->metaCode, [4, 17, 32, 613], true) || $exception->httpStatus === 429) {
             return 'Meta rate limited this request. Wait a little while and try again.';
@@ -188,12 +252,16 @@ class MetaMarketingApi
     private function pagedGet(string $url, array $parameters): array
     {
         $data = [];
-        $truncated = false;
-        for ($page = 0; $page < self::MAX_PAGES; $page++) {
-            $response = $page === 0
-                ? Http::acceptJson()->timeout(self::TIMEOUT_SECONDS)->get($url, $parameters)
-                : Http::acceptJson()->timeout(self::TIMEOUT_SECONDS)->get($url);
-            $payload = $this->decode($response);
+        $visitedUrls = [];
+        $firstPage = true;
+        while (true) {
+            $requestUrl = $url;
+            if (isset($visitedUrls[$requestUrl])) {
+                throw new MetaApiException('Meta returned a repeated pagination cursor. The historical response could not be completed.', 502);
+            }
+            $visitedUrls[$requestUrl] = true;
+            $payload = $this->getPage($requestUrl, $firstPage ? $parameters : []);
+            $firstPage = false;
             $rows = $payload['data'] ?? null;
             if (! is_array($rows)) {
                 throw new MetaApiException('Meta returned an unexpected response while retrieving advertising data.', 502);
@@ -207,14 +275,85 @@ class MetaMarketingApi
             if (($nextUrl['scheme'] ?? null) !== 'https' || strtolower((string) ($nextUrl['host'] ?? '')) !== 'graph.facebook.com') {
                 throw new MetaApiException('Meta returned an invalid pagination URL.', 502);
             }
-            if ($page === self::MAX_PAGES - 1) {
-                $truncated = true;
-                break;
-            }
             $url = $next;
         }
 
-        return ['data' => $data, 'truncated' => $truncated];
+        return ['data' => $data, 'truncated' => false];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parameters
+     * @return array<string, mixed>
+     */
+    private function getPage(string $url, array $parameters): array
+    {
+        for ($attempt = 0; $attempt < self::MAX_PAGE_RETRIES; $attempt++) {
+            try {
+                $pendingRequest = Http::acceptJson()->timeout(self::TIMEOUT_SECONDS);
+                $response = $parameters === []
+                    ? $pendingRequest->get($url)
+                    : $pendingRequest->get($url, $parameters);
+            } catch (ConnectionException) {
+                if ($attempt === self::MAX_PAGE_RETRIES - 1) {
+                    throw new MetaApiException('Meta could not complete the request. Try again later.', 502);
+                }
+                usleep(250_000 * (2 ** $attempt));
+                continue;
+            }
+
+            try {
+                return $this->decode($response);
+            } catch (MetaApiException $exception) {
+                $retryable = $exception->httpStatus === 429
+                    || in_array($exception->metaCode, [4, 17, 32, 613], true);
+                if (! $retryable || $attempt === self::MAX_PAGE_RETRIES - 1) {
+                    throw $exception;
+                }
+                $delayMicroseconds = $exception->retryAfterSeconds !== null
+                    ? min($exception->retryAfterSeconds, 30) * 1_000_000
+                    : 250_000 * (2 ** $attempt);
+                if ($delayMicroseconds > 0) {
+                    usleep($delayMicroseconds);
+                }
+            }
+        }
+
+        throw new MetaApiException('Meta could not complete the request. Try again later.', 502);
+    }
+
+    /**
+     * @param  array<string, mixed>  $parameters
+     * @param  list<string>  $fields
+     * @return array{data: list<array<string, mixed>>, truncated: bool}
+     */
+    private function entityData(string $url, array $parameters, array $fields): array
+    {
+        $result = $this->pagedGet($url, [...$parameters, 'fields' => implode(',', $fields)]);
+        $rows = array_values(array_filter($result['data'], 'is_array'));
+
+        return ['data' => $rows, 'truncated' => $result['truncated']];
+    }
+
+    /**
+     * @return array{data: list<array<string, mixed>>, truncated: bool}
+     */
+    private function insightData(string $accessToken, string $accountId, string $level, string $timeIncrement): array
+    {
+        $result = $this->pagedGet($this->graphUrl($accountId.'/insights'), [
+            'fields' => implode(',', [
+                'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name',
+                'objective', 'spend', 'impressions', 'reach', 'clicks', 'ctr', 'cpc',
+                'actions', 'cost_per_action_type', 'date_start', 'date_stop',
+            ]),
+            'level' => $level,
+            'date_preset' => 'maximum',
+            'time_increment' => $timeIncrement,
+            'limit' => 100,
+            'access_token' => $accessToken,
+        ]);
+        $rows = array_values(array_filter($result['data'], 'is_array'));
+
+        return ['data' => $rows, 'truncated' => $result['truncated']];
     }
 
     /**
@@ -238,10 +377,30 @@ class MetaMarketingApi
                         ? 'Meta rate limited this request.'
                         : 'Meta could not complete the request. Check the account permissions and try again.'));
 
-            throw new MetaApiException($safeMessage, $response->status() >= 400 ? $response->status() : 502, $code, $invalidToken);
+            throw new MetaApiException(
+                $safeMessage,
+                $response->status() >= 400 ? $response->status() : 502,
+                $code,
+                $invalidToken,
+                $this->retryAfterSeconds($response),
+            );
         }
 
         return $payload;
+    }
+
+    private function retryAfterSeconds(Response $response): ?int
+    {
+        $header = $response->header('Retry-After');
+        if (! is_string($header) || trim($header) === '') {
+            return null;
+        }
+        if (is_numeric($header)) {
+            return max(0, (int) $header);
+        }
+
+        $timestamp = strtotime($header);
+        return $timestamp === false ? null : max(0, $timestamp - time());
     }
 
     private function numeric(mixed $value): int|float|null

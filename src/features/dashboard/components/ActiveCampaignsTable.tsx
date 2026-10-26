@@ -98,7 +98,7 @@ export const ActiveCampaignsTable: React.FC<ActiveCampaignsTableProps> = ({
                             {campaign.name}
                           </Link>
                           <div className="text-[11px] text-[#94A3B8] mt-0.5">
-                            {campaign.start_date || '—'} &ndash; {campaign.end_date || '—'}
+                            {campaign.start_date || '—'} &ndash; {campaign.end_date || 'Ongoing'}
                           </div>
                         </div>
                       </div>

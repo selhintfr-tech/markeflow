@@ -3,18 +3,22 @@ import type {
   RegisterData,
   ForgotPasswordData,
   ResetPasswordData,
+  VerifyRecoveryCodeData,
   AuthResponse,
   AuthUser,
 } from '../types';
+import { ApiRequestTimeoutError, fetchWithTimeout } from '../../api/apiClient.ts';
 
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
 class AuthService {
+  private currentUserRequest: Promise<AuthUser | null> | null = null;
+
   /**
    * Initializes Laravel's session CSRF token through the same-origin Vite proxy.
    */
   async getCsrfCookie(): Promise<void> {
-    const response = await fetch('/sanctum/csrf-cookie', {
+    const response = await fetchWithTimeout('/sanctum/csrf-cookie', {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -59,7 +63,7 @@ class AuthService {
       headers.set('X-XSRF-TOKEN', xsrfToken);
     }
 
-    return fetch(path, {
+    return fetchWithTimeout(path, {
       ...init,
       method,
       headers,
@@ -95,10 +99,12 @@ class AuthService {
         user: data.user,
         message: 'Successfully signed in.',
       };
-    } catch {
+    } catch (error) {
       return {
         success: false,
-        message: 'Unable to connect to the Laravel authentication service. Check that the backend is running and the Vite API proxy is available.',
+        message: error instanceof ApiRequestTimeoutError
+          ? error.message
+          : 'Unable to connect to the Laravel authentication service. Check that the backend is running and the Vite API proxy is available.',
       };
     }
   }
@@ -140,7 +146,7 @@ class AuthService {
   }
 
   /**
-   * Request password reset link
+   * Request an email verification code for password recovery.
    */
   async forgotPassword(data: ForgotPasswordData): Promise<AuthResponse> {
     try {
@@ -164,18 +170,45 @@ class AuthService {
       const resData = await response.json();
       return {
         success: true,
-        message: resData.message || 'A secure password reset link has been dispatched to your email address.',
+        message: resData.message || 'If an account exists for that email address, a verification code will be sent.',
       };
     } catch {
       return {
         success: false,
-        message: 'Password reset service is currently unreachable. The backend mail relay service is not connected.',
+        message: 'Unable to connect to the password recovery service.',
       };
     }
   }
 
+  async verifyRecoveryCode(data: VerifyRecoveryCodeData): Promise<AuthResponse> {
+    try {
+      const response = await this.request('/api/verify-recovery-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          success: false,
+          message: resData.message || 'That code is incorrect or expired. Request a new code and try again.',
+          errors: resData.errors,
+        };
+      }
+
+      return {
+        success: true,
+        recoveryToken: resData.recovery_token,
+        message: resData.message || 'Email verified. Choose a new password.',
+      };
+    } catch {
+      return { success: false, message: 'Unable to connect to the password recovery service.' };
+    }
+  }
+
   /**
-   * Reset password with token
+   * Reset password with a verified, short-lived recovery token.
    */
   async resetPassword(data: ResetPasswordData): Promise<AuthResponse> {
     try {
@@ -211,7 +244,23 @@ class AuthService {
   /**
    * Get current authenticated user session
    */
-  async getCurrentUser(): Promise<AuthUser | null> {
+  getCurrentUser(): Promise<AuthUser | null> {
+    if (this.currentUserRequest) return this.currentUserRequest;
+
+    const request = this.loadCurrentUser();
+    this.currentUserRequest = request;
+    void request.then(
+      () => {
+        if (this.currentUserRequest === request) this.currentUserRequest = null;
+      },
+      () => {
+        if (this.currentUserRequest === request) this.currentUserRequest = null;
+      },
+    );
+    return request;
+  }
+
+  private async loadCurrentUser(): Promise<AuthUser | null> {
     const response = await this.request('/api/user');
 
     if (response.status === 401) {

@@ -24,7 +24,7 @@ class MarketingStrategyResource extends JsonResource
             'starts_on' => $this->starts_on?->toDateString(),
             'ends_on' => $this->ends_on?->toDateString(),
             'status' => $this->status,
-            'progress' => $this->progress,
+            'progress' => $this->measuredProgress(),
             'action_plan' => $this->action_plan,
             'notes' => $this->notes,
             'audience_ids' => $this->whenLoaded('audiences', fn () => $this->audiences->pluck('id')->values()),

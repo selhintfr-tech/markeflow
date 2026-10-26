@@ -276,6 +276,93 @@ class CampaignApiTest extends TestCase
         $this->actingAs($owner)->getJson('/test-api/campaigns/')->assertForbidden();
     }
 
+    public function test_can_create_ongoing_campaign_without_end_date(): void
+    {
+        $owner = $this->createUser('ongoing-campaign-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Ongoing project');
+
+        $payload = $this->campaignPayload($project);
+        unset($payload['end_date']);
+
+        $created = $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/campaigns/', $payload)
+            ->assertCreated()
+            ->assertJsonPath('data.end_date', null);
+
+        $campaignId = $created->json('data.id');
+        $this->assertDatabaseHas('campaigns', [
+            'id' => $campaignId,
+            'end_date' => null,
+        ]);
+    }
+
+    public function test_can_update_campaign_to_ongoing_and_switch_back_to_end_date(): void
+    {
+        $owner = $this->createUser('switch-campaign-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Switch project');
+
+        $created = $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/campaigns/', $this->campaignPayload($project))
+            ->assertCreated()
+            ->assertJsonPath('data.end_date', '2026-10-31');
+
+        $campaignId = $created->json('data.id');
+
+        // Switch to ongoing (end_date = null)
+        $this->putJson('/test-api/campaigns/'.$campaignId, [
+            'end_date' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.end_date', null);
+
+        $this->assertDatabaseHas('campaigns', [
+            'id' => $campaignId,
+            'end_date' => null,
+        ]);
+
+        // Switch back to a specific end date
+        $this->putJson('/test-api/campaigns/'.$campaignId, [
+            'end_date' => '2026-11-15',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.end_date', '2026-11-15');
+
+        $this->getJson('/test-api/campaigns/'.$campaignId)
+            ->assertOk()
+            ->assertJsonPath('data.end_date', '2026-11-15');
+    }
+
+    public function test_start_date_is_still_required_and_invalid_end_date_is_rejected(): void
+    {
+        $owner = $this->createUser('validate-campaign-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Validate project');
+
+        $payload = $this->campaignPayload($project);
+        unset($payload['start_date']);
+        $payload['end_date'] = null;
+
+        // Start date missing fails
+        $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/campaigns/', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['start_date']);
+
+        // End date before start date fails
+        $invalidPayload = $this->campaignPayload($project);
+        $invalidPayload['start_date'] = '2026-10-15';
+        $invalidPayload['end_date'] = '2026-10-10';
+
+        $this->postJson('/test-api/campaigns/', $invalidPayload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['end_date']);
+    }
+
     private function campaignPayload(Project $project): array
     {
         return [

@@ -8,10 +8,13 @@ use App\Http\Requests\Tasks\UpdateTaskRequest;
 use App\Http\Resources\Api\TaskResource;
 use App\Models\Task;
 use App\Models\User;
+use App\Models\WorkspaceAuditLog;
 use App\Models\WorkspaceUser;
 use App\Services\TenantContext;
+use App\Services\WorkspaceNotificationService;
 use App\Services\WorkspaceAuthorizationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\Rule;
 
@@ -20,6 +23,7 @@ class TaskController extends Controller
     public function __construct(
         private readonly TenantContext $tenantContext,
         private readonly WorkspaceAuthorizationService $authorizationService,
+        private readonly WorkspaceNotificationService $notifications,
     ) {}
 
     public function index(Request $request)
@@ -56,7 +60,7 @@ class TaskController extends Controller
             ->when($filters['assignee_id'] ?? null, fn ($query, int $assigneeId) => $query->where('assignee_id', $assigneeId))
             ->when($filters['project_id'] ?? null, fn ($query, string $projectId) => $query->where('project_id', $projectId))
             ->when($filters['campaign_id'] ?? null, fn ($query, string $campaignId) => $query->where('campaign_id', $campaignId))
-            ->orderBy('due_date')
+            ->orderByRaw('CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC')
             ->orderByDesc('created_at')
             ->paginate($filters['per_page'] ?? 15)
             ->withQueryString();
@@ -89,8 +93,24 @@ class TaskController extends Controller
         $this->authorizeTaskAccess($request->user(), true);
 
         $record = $this->findTask($task);
-        $record->fill($request->validated());
-        $record->save();
+        $previousStatus = $record->status;
+        DB::transaction(function () use ($record, $previousStatus, $request): void {
+            $record->fill($request->validated());
+            $record->save();
+            if ($previousStatus !== Task::STATUS_COMPLETED && $record->status === Task::STATUS_COMPLETED) {
+                $this->notifications->taskCompleted($record);
+            }
+            if ($previousStatus !== $record->status && $record->project_id !== null) {
+                WorkspaceAuditLog::log(
+                    $record->workspace_id,
+                    'project.task_status_changed',
+                    'project',
+                    $record->project_id,
+                    ['summary' => $record->title.' status changed from '.$previousStatus.' to '.$record->status],
+                    $request->user()->id
+                );
+            }
+        });
 
         return new TaskResource($record->refresh()->load(['project:id,name', 'campaign:id,name', 'assignee:id,name,email']));
     }

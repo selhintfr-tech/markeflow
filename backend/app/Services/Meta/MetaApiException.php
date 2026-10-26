@@ -11,6 +11,7 @@ class MetaApiException extends RuntimeException
         public readonly int $httpStatus = 502,
         public readonly ?int $metaCode = null,
         public readonly bool $tokenInvalid = false,
+        public readonly ?int $retryAfterSeconds = null,
     ) {
         parent::__construct($message);
     }

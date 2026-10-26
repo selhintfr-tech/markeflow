@@ -9,11 +9,13 @@ import { useAuth } from '../../context/AuthContext';
 interface AppHeaderProps {
   onToggleMobileSidebar?: () => void;
   isMobileSidebarOpen?: boolean;
+  mobileMenuButtonRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
   onToggleMobileSidebar,
   isMobileSidebarOpen = false,
+  mobileMenuButtonRef,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -42,15 +44,17 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   }, []);
 
   return (
-    <header className="h-16 px-4 sm:px-6 lg:px-8 flex items-center justify-between border-b border-[#E2E8F0] bg-white sticky top-0 z-30">
+    <header className="app-header relative z-30 flex h-16 shrink-0 items-center justify-between border-b px-4 sm:px-6 lg:px-8">
       {/* Left: Mobile hamburger + Workspace dropdown */}
       <div className="flex items-center gap-3">
         <button
+          ref={mobileMenuButtonRef}
           type="button"
           onClick={onToggleMobileSidebar}
-          className="lg:hidden p-2 -ml-1 rounded-lg text-[#64748B] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
-          aria-label="Toggle navigation menu"
+          className="app-header-menu-button -ml-1 rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 lg:hidden"
+          aria-label={isMobileSidebarOpen ? 'Close navigation menu' : 'Open navigation menu'}
           aria-expanded={isMobileSidebarOpen}
+          aria-controls="app-sidebar"
         >
           <Menu className="w-5 h-5" />
         </button>
@@ -68,7 +72,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search campaigns, projects, leads..."
-            className="w-full pl-9 pr-4 py-1.5 rounded-lg border border-[#E2E8F0] bg-[#F8F7FC] text-sm text-[#1E1B4B] placeholder-[#94A3B8] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20 focus:border-[#6D28D9] transition-all"
+            className="app-header-search w-full rounded-lg border py-1.5 pl-9 pr-4 text-sm transition-all focus:border-[#6D28D9] focus:outline-none focus:ring-2 focus:ring-[#6D28D9]/20"
           />
         </div>
       </div>
@@ -86,9 +90,21 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
             aria-haspopup="menu"
             aria-label="User account menu"
           >
-            {/* User Initials Avatar badge */}
-            <div className="w-9 h-9 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center font-semibold text-xs tracking-wide border border-[#DDD6FE]">
+            {/* User Avatar badge */}
+            <div className="relative w-9 h-9 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center font-semibold text-xs tracking-wide border border-[#DDD6FE] overflow-hidden">
               {userInitials}
+              {user?.avatar_url && (
+                <img
+                  key={user.avatar_url}
+                  src={user.avatar_url}
+                  alt=""
+                  aria-hidden="true"
+                  onError={(event) => {
+                    event.currentTarget.style.display = 'none';
+                  }}
+                  className="absolute inset-0 w-full h-full object-cover"
+                />
+              )}
             </div>
             <span className="hidden sm:inline text-sm font-medium text-[#1E1B4B]">
               {userName}
@@ -100,7 +116,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           {isUserMenuOpen && (
             <div
               role="menu"
-              className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-[#E2E8F0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+              className="app-header-menu absolute right-0 z-50 mt-2 w-56 rounded-xl border py-1.5 shadow-lg animate-in fade-in zoom-in-95 duration-100"
             >
               <div className="px-4 py-2 border-b border-[#F1F5F9]">
                 <p className="text-xs font-semibold text-[#1E1B4B]">{userName}</p>

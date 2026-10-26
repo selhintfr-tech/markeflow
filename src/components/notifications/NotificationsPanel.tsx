@@ -1,28 +1,53 @@
-import { useNotifications } from './useNotifications';
 import { NotificationItem } from './NotificationItem';
 import { NotificationEmptyState } from './NotificationEmptyState';
 import { X } from 'lucide-react';
 import type { RefObject } from 'react';
+import { useNavigate } from 'react-router-dom';
+import type { Notification } from './notificationTypes';
+import { useState } from 'react';
 
 interface NotificationsPanelProps {
   isOpen: boolean;
   onClose: () => void;
   panelId: string;
   closeRef: RefObject<HTMLButtonElement | null>;
-  workspaceId?: string;
+  notifications: Notification[];
+  unreadCount: number;
+  loading: boolean;
+  hasMore: boolean;
+  error: string | null;
+  onMarkAsRead: (id: string) => Promise<void>;
+  onMarkAllAsRead: () => Promise<void>;
+  onRetry: () => Promise<void>;
+  onLoadMore: () => Promise<void>;
 }
 
-export const NotificationsPanel = ({ isOpen, onClose, panelId, closeRef, workspaceId }: NotificationsPanelProps) => {
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications({ workspaceId });
+export const NotificationsPanel = ({
+  isOpen, onClose, panelId, closeRef, notifications, unreadCount, loading, hasMore, error,
+  onMarkAsRead, onMarkAllAsRead, onRetry, onLoadMore,
+}: NotificationsPanelProps) => {
+  const navigate = useNavigate();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleNotificationClick = (id: string) => {
-    markAsRead(id);
+  const handleNotificationClick = async (notification: Notification) => {
+    setActionError(null);
+    try {
+      await onMarkAsRead(notification.id);
+      if (notification.action_url) navigate(notification.action_url);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to update this notification.');
+    }
   };
 
-  const handleMarkAllAsRead = () => {
-    markAllAsRead();
+  const handleMarkAllAsRead = async () => {
+    setActionError(null);
+    try {
+      await onMarkAllAsRead();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to update notifications.');
+    }
   };
 
   return (
@@ -68,15 +93,26 @@ export const NotificationsPanel = ({ isOpen, onClose, panelId, closeRef, workspa
         </div>
       </div>
 
-      <ul className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 250px)' }} role="list" aria-label="Notification list">
-        {notifications.length === 0 ? (
+      {error && (
+        <div role="alert" className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p>{error}</p>
+          <button type="button" onClick={() => void onRetry()} className="mt-2 font-semibold underline">Try again</button>
+        </div>
+      )}
+      {actionError && (
+        <p role="alert" className="mx-4 mt-3 text-sm text-red-700">{actionError}</p>
+      )}
+      <ul className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 250px)' }} role="list" aria-label="Notification list" aria-busy={loading}>
+        {loading && notifications.length === 0 ? (
+          <li className="p-6 text-center text-sm text-gray-500">Loading notifications…</li>
+        ) : notifications.length === 0 && !error ? (
           <NotificationEmptyState />
         ) : (
           notifications.map((notification) => (
             <li key={notification.id}>
               <NotificationItem
                 notification={notification}
-                onClick={handleNotificationClick}
+                onClick={() => void handleNotificationClick(notification)}
               />
             </li>
           ))
@@ -85,9 +121,18 @@ export const NotificationsPanel = ({ isOpen, onClose, panelId, closeRef, workspa
 
       {notifications.length > 0 && (
         <div className="p-3 border-t border-gray-200">
-          <p className="text-xs text-gray-500 text-center">
-            Showing {notifications.length} notifications
-          </p>
+          {hasMore ? (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void onLoadMore()}
+              className="w-full text-xs font-semibold text-purple-600 hover:text-purple-700 disabled:opacity-60"
+            >
+              {loading ? 'Loading…' : 'Load more notifications'}
+            </button>
+          ) : (
+            <p className="text-xs text-gray-500 text-center">Showing {notifications.length} notifications</p>
+          )}
         </div>
       )}
     </div>

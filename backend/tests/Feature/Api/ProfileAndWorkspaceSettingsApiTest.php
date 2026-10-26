@@ -11,6 +11,8 @@ use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 class ProfileAndWorkspaceSettingsApiTest extends TestCase
@@ -24,6 +26,8 @@ class ProfileAndWorkspaceSettingsApiTest extends TestCase
         Route::middleware(['web'])->prefix('api')->group(function () {
             Route::get('/profile', [ProfileController::class, 'show'])->middleware('auth');
             Route::patch('/profile', [ProfileController::class, 'update'])->middleware('auth');
+            Route::post('/profile/avatar', [ProfileController::class, 'uploadAvatar'])->middleware('auth');
+            Route::delete('/profile/avatar', [ProfileController::class, 'deleteAvatar'])->middleware('auth');
             Route::patch('/profile/password', [ProfileController::class, 'changePassword'])->middleware('auth');
             Route::get('/workspaces/{workspace}/settings', [WorkspaceSettingsController::class, 'show'])->middleware('auth');
             Route::patch('/workspaces/{workspace}/settings', [WorkspaceSettingsController::class, 'update'])->middleware('auth');
@@ -111,6 +115,73 @@ class ProfileAndWorkspaceSettingsApiTest extends TestCase
         $this->assertTrue(Hash::check('CorrectPass123!', $user->fresh()->password));
     }
 
+    public function test_authenticated_user_can_upload_replace_and_delete_own_avatar(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.avatar_disk' => 'public']);
+        $user = $this->createUser('Avatar User', 'avatar@example.com');
+        $otherUser = $this->createUser('Other User', 'other-avatar@example.com');
+        $headers = ['Accept' => 'application/json'];
+
+        $upload = fn (string $name) => UploadedFile::fake()->createWithContent(
+            $name,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=')
+        );
+
+        $firstResponse = $this->actingAs($user)->post('/api/profile/avatar', [
+            'avatar' => $upload('avatar.png'),
+        ], $headers)->assertOk();
+
+        $firstPath = $user->fresh()->avatar_url;
+        $this->assertNotNull($firstPath);
+        Storage::disk('public')->assertExists($firstPath);
+        $firstUrl = Storage::disk('public')->url($firstPath);
+        $firstResponse->assertJsonPath('data.avatar_url', $firstUrl);
+        $this->getJson('/api/user')->assertOk()->assertJsonPath('avatar_url', $firstUrl);
+
+        $this->post('/api/profile/avatar', ['avatar' => $upload('replacement.png')], $headers)
+            ->assertOk();
+
+        $replacementPath = $user->fresh()->avatar_url;
+        $this->assertNotSame($firstPath, $replacementPath);
+        Storage::disk('public')->assertMissing($firstPath);
+        Storage::disk('public')->assertExists($replacementPath);
+        $this->assertNull($otherUser->fresh()->avatar_url);
+
+        $this->deleteJson('/api/profile/avatar')->assertOk()->assertJsonPath('data.avatar_url', null);
+        $this->assertNull($user->fresh()->avatar_url);
+        Storage::disk('public')->assertMissing($replacementPath);
+    }
+
+    public function test_avatar_upload_requires_authentication_and_valid_image_type_and_size(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.avatar_disk' => 'public']);
+
+        $this->postJson('/api/profile/avatar')->assertUnauthorized();
+        $user = $this->createUser('Avatar Validation', 'avatar-validation@example.com');
+        $headers = ['Accept' => 'application/json'];
+
+        $this->actingAs($user)->post('/api/profile/avatar', [
+            'avatar' => UploadedFile::fake()
+                ->createWithContent('not-an-image.png', 'not an image')
+                ->mimeType('text/plain'),
+        ], $headers)->assertUnprocessable()->assertJsonValidationErrors(['avatar']);
+
+        $this->post('/api/profile/avatar', [
+            'avatar' => UploadedFile::fake()->create('too-large.webp', 5121, 'image/webp'),
+        ], $headers)->assertUnprocessable()->assertJsonValidationErrors(['avatar']);
+
+        $this->post('/api/profile/avatar', [
+            'user_id' => 999,
+            'avatar' => UploadedFile::fake()->createWithContent(
+                'avatar.png',
+                base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=')
+            ),
+        ], $headers)->assertUnprocessable()->assertJsonValidationErrors(['user_id']);
+        $this->assertNull($user->fresh()->avatar_url);
+    }
+
     public function test_user_can_change_password_only_after_current_password_verification(): void
     {
         $user = $this->createUser('Password User', 'password@example.com');
@@ -131,6 +202,13 @@ class ProfileAndWorkspaceSettingsApiTest extends TestCase
             ->assertJsonPath('message', 'Password updated successfully.')
             ->assertJsonMissingPath('password');
         $this->assertTrue(Hash::check('NewSecurePass123!', $user->fresh()->password));
+
+        $this->postJson('/api/logout')->assertOk();
+        $this->postJson('/api/login', [
+            'email' => strtoupper($user->email),
+            'password' => 'NewSecurePass123!',
+        ])->assertOk()
+            ->assertJsonPath('user.email', $user->email);
     }
 
     public function test_password_change_rejects_weak_or_unconfirmed_passwords(): void

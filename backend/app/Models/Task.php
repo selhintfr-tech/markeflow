@@ -75,6 +75,15 @@ class Task extends Model
         static::updating(function (self $task): void {
             $task->assertRelatedRecordsBelongToWorkspace();
         });
+
+        static::saving(function (self $task): void {
+            if ($task->due_date === null && $task->status === self::STATUS_OVERDUE) {
+                $field = $task->isDirty('due_date') ? 'due_date' : 'status';
+                throw ValidationException::withMessages([
+                    $field => 'A task without a due date cannot be classified as Overdue.',
+                ]);
+            }
+        });
     }
 
     public function project(): BelongsTo

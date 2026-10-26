@@ -47,9 +47,19 @@ class StoreTaskRequest extends FormRequest
             ],
             'title' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
-            'status' => ['sometimes', 'required', 'string', Rule::in(Task::STATUSES)],
+            'status' => [
+                'sometimes',
+                'required',
+                'string',
+                Rule::in(Task::STATUSES),
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if ($value === Task::STATUS_OVERDUE && empty($this->input('due_date'))) {
+                        $fail('A task without a due date cannot be classified as Overdue.');
+                    }
+                },
+            ],
             'priority' => ['sometimes', 'required', 'string', Rule::in(Task::PRIORITIES)],
-            'due_date' => ['required', 'date'],
+            'due_date' => ['nullable', 'date'],
             'workspace_id' => ['prohibited'],
             'created_by' => ['prohibited'],
             'owner_id' => ['prohibited'],

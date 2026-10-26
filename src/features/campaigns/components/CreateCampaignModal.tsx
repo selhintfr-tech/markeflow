@@ -36,6 +36,7 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
   const [platform, setPlatform] = useState<CampaignPlatform>('Meta Ads');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [isOngoing, setIsOngoing] = useState(false);
   const [adBudget, setAdBudget] = useState('2000');
   const [status, setStatus] = useState<CampaignStatus>('Planned');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -54,8 +55,10 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
       setWorkspaceName(initialCampaign.workspaceName);
       setProjectId(initialCampaign.projectId);
       setPlatform(initialCampaign.platform);
-      setStartDate(initialCampaign.startDate.slice(0, 10));
-      setEndDate(initialCampaign.endDate.slice(0, 10));
+      setStartDate(initialCampaign.startDate ? initialCampaign.startDate.slice(0, 10) : '');
+      const hasEndDate = Boolean(initialCampaign.endDate);
+      setIsOngoing(!hasEndDate);
+      setEndDate(hasEndDate && initialCampaign.endDate ? initialCampaign.endDate.slice(0, 10) : '');
       setAdBudget(initialCampaign.adBudget ? initialCampaign.adBudget.toString() : '2000');
       setStatus(initialCampaign.status);
     } else {
@@ -66,6 +69,7 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
       setProjectId(projects[0]?.id || '');
       setPlatform('Meta Ads');
       setStartDate('');
+      setIsOngoing(false);
       setEndDate('');
       setAdBudget('2000');
       setStatus('Planned');
@@ -95,8 +99,10 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
       newErrors.adBudget = 'Please enter a valid budget';
     }
     if (!projectId) newErrors.project = 'Select a project in this workspace';
-    if (!startDate || !endDate) newErrors.dates = 'Start and end dates are required';
-    else if (endDate < startDate) newErrors.dates = 'End date must be on or after the start date';
+    if (!startDate) newErrors.dates = 'Start date is required';
+    else if (!isOngoing && endDate && endDate < startDate) {
+      newErrors.dates = 'End date must be on or after the start date';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -115,7 +121,7 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
       platform,
       channel: platform,
       startDate,
-      endDate,
+      endDate: isOngoing || !endDate.trim() ? null : endDate,
       adBudget: parseFloat(adBudget) || 0,
       status,
     });
@@ -246,17 +252,45 @@ export const CreateCampaignModal: React.FC<CreateCampaignModalProps> = ({
 
             <div>
               <label htmlFor="create-campaign-end-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                End Date <span className="text-red-500">*</span>
+                End Date
               </label>
               <input
                 id="create-campaign-end-input"
                 type="date"
-                value={endDate}
+                value={isOngoing ? '' : endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
+                disabled={isOngoing}
+                placeholder={isOngoing ? 'Ongoing' : ''}
+                className={`w-full px-3 py-2 text-xs border rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
+                  isOngoing
+                    ? 'bg-slate-100 border-[#E2E8F0] text-slate-400 cursor-not-allowed'
+                    : 'bg-white border-[#E2E8F0]'
+                }`}
               />
             </div>
-            {errors.dates && <p className="text-[11px] text-red-500">{errors.dates}</p>}
+
+            <div className="col-span-2 -mt-1">
+              <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  id="create-campaign-ongoing-checkbox"
+                  type="checkbox"
+                  checked={isOngoing}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsOngoing(checked);
+                    if (checked) {
+                      setEndDate('');
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-[#CBD5E1] text-[#6D28D9] focus:ring-[#6D28D9] cursor-pointer"
+                />
+                <span className="text-xs font-medium text-[#475569]">
+                  No end date — Ongoing campaign
+                </span>
+              </label>
+            </div>
+
+            {errors.dates && <p className="col-span-2 text-[11px] text-red-500 -mt-1">{errors.dates}</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

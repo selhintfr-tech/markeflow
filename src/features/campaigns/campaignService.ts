@@ -13,7 +13,7 @@ export interface CampaignRecord {
   channel: string;
   objective: string | null;
   start_date: string;
-  end_date: string;
+  end_date: string | null;
   budget: string | number;
   spend: string | number;
   leads: number;
@@ -23,18 +23,26 @@ export interface CampaignRecord {
   updated_at: string;
 }
 
-export type CampaignInput = Pick<CampaignRecord, 'project_id' | 'name' | 'platform' | 'channel' | 'start_date' | 'end_date'> &
-  Partial<Pick<CampaignRecord, 'description' | 'status' | 'objective' | 'budget' | 'spend' | 'leads' | 'customers' | 'revenue'>>;
+export type CampaignInput = Pick<CampaignRecord, 'project_id' | 'name' | 'platform' | 'channel' | 'start_date'> &
+  Partial<Pick<CampaignRecord, 'end_date' | 'description' | 'status' | 'objective' | 'budget' | 'spend' | 'leads' | 'customers' | 'revenue'>>;
 
 export const campaignService = {
-  async list(workspaceId: string, params: { search?: string; status?: string; platform?: string } = {}): Promise<CampaignRecord[]> {
+  async list(
+    workspaceId: string,
+    params: { search?: string; status?: string; platform?: string } = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CampaignRecord[]> {
     const query = new URLSearchParams({ per_page: '100', page: '1' });
     if (params.search) query.set('search', params.search);
     if (params.status) query.set('status', params.status);
     if (params.platform) query.set('platform', params.platform);
     const records: CampaignRecord[] = [];
     while (true) {
-      const result = await apiRequest<ApiCollection<CampaignRecord>>(`/api/campaigns?${query}`, { workspaceId });
+      const result = await apiRequest<ApiCollection<CampaignRecord>>(`/api/campaigns?${query}`, {
+        workspaceId,
+        cacheTtlMs: 10_000,
+        signal: options.signal,
+      });
       records.push(...result.data);
       if (!result.meta || Number(query.get('page')) >= result.meta.last_page) break;
       query.set('page', String(Number(query.get('page')) + 1));

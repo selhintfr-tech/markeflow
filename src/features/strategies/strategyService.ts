@@ -25,7 +25,7 @@ export interface StrategyRecord {
   starts_on: string | null;
   ends_on: string | null;
   status: StrategyStatus;
-  progress: number;
+  progress: number | null;
   action_plan: ActionPlanItem[] | null;
   notes: string | null;
   audience_ids?: string[];
@@ -48,7 +48,6 @@ export interface StrategyInput {
   starts_on?: string | null;
   ends_on?: string | null;
   status?: StrategyStatus;
-  progress?: number;
   action_plan?: ActionPlanItem[] | null;
   notes?: string | null;
   audience_ids?: string[];
@@ -64,6 +63,7 @@ export const strategyService = {
       campaign_id?: string;
       audience_id?: string;
     } = {},
+    options: { signal?: AbortSignal } = {},
   ): Promise<StrategyRecord[]> {
     const query = new URLSearchParams({ per_page: '100', page: '1' });
     if (params.search) query.set('search', params.search);
@@ -76,6 +76,7 @@ export const strategyService = {
     while (true) {
       const result = await apiRequest<ApiCollection<StrategyRecord>>(`/api/strategies?${query.toString()}`, {
         workspaceId,
+        signal: options.signal,
       });
       records.push(...result.data);
       if (!result.meta || Number(query.get('page')) >= result.meta.last_page) break;

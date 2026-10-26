@@ -12,8 +12,10 @@ use App\Models\Crm\CrmActivity;
 use App\Models\Crm\CrmLead;
 use App\Services\Crm\CrmService;
 use App\Services\TenantContext;
+use App\Services\WorkspaceNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LeadController extends Controller
 {
@@ -21,7 +23,8 @@ class LeadController extends Controller
 
     public function __construct(
         protected TenantContext $tenantContext,
-        protected CrmService $crmService
+        protected CrmService $crmService,
+        protected WorkspaceNotificationService $notifications,
     ) {}
 
     public function index(Request $request)
@@ -114,20 +117,22 @@ class LeadController extends Controller
 
         $lead = new CrmLead($data);
         $lead->workspace_id = $workspace->id;
-        $lead->save();
+        DB::transaction(function () use ($lead, $request, $workspace): void {
+            $lead->save();
 
-        // Create initial activity record
-        $activity = new CrmActivity([
-            'lead_id' => $lead->id,
-            'contact_id' => $lead->contact_id,
-            'user_id' => $request->user()->id,
-            'type' => CrmActivity::TYPE_CREATE,
-            'title' => 'Lead Created',
-            'description' => 'Lead record created for ['.$lead->name.']'.($lead->company ? ' at ['.$lead->company.']' : '').'.',
-            'activity_date' => now(),
-        ]);
-        $activity->workspace_id = $workspace->id;
-        $activity->save();
+            $activity = new CrmActivity([
+                'lead_id' => $lead->id,
+                'contact_id' => $lead->contact_id,
+                'user_id' => $request->user()->id,
+                'type' => CrmActivity::TYPE_CREATE,
+                'title' => 'Lead Created',
+                'description' => 'Lead record created for ['.$lead->name.']'.($lead->company ? ' at ['.$lead->company.']' : '').'.',
+                'activity_date' => now(),
+            ]);
+            $activity->workspace_id = $workspace->id;
+            $activity->save();
+            $this->notifications->leadCreated($lead);
+        });
 
         return (new LeadResource($lead->load(['owner', 'stage', 'pipeline', 'activities'])))
             ->response()

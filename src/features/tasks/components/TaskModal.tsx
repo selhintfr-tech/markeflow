@@ -31,7 +31,7 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
  * Converts a display string ('15 Oct 2026') or ISO string ('2026-10-15')
  * to standard ISO format 'YYYY-MM-DD' for native HTML5 date input.
  */
-const displayToIsoDate = (dateStr: string): string => {
+const displayToIsoDate = (dateStr?: string | null): string => {
   if (!dateStr) return '';
   const trimmed = dateStr.trim();
 
@@ -132,13 +132,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({
     if (!title.trim()) {
       newErrors.title = 'Task name is required';
     }
-    if (!isoDueDate.trim()) {
-      newErrors.dueDate = 'Due date is required';
-    } else {
+    if (isoDueDate.trim()) {
       const parsed = new Date(isoDueDate);
       if (isNaN(parsed.getTime())) {
         newErrors.dueDate = 'Please select a valid date';
       }
+    }
+    if (!isoDueDate.trim() && status === 'Overdue') {
+      newErrors.status = 'A task without a due date cannot be marked as Overdue.';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -161,7 +162,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({
         : { name: 'Unassigned', initials: '—' },
       assigneeId: matchedAssignee?.id,
       priority,
-      dueDate: isoDueDate,
+      dueDate: isoDueDate.trim() || undefined,
       status,
     });
 
@@ -293,13 +294,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({
 
             <div>
               <label htmlFor="task-modal-duedate-input" className="block text-xs font-semibold text-[#1E1B4B] mb-1">
-                Due Date <span className="text-red-500">*</span>
+                Due Date <span className="text-[10px] font-normal text-[#94A3B8]">(optional)</span>
               </label>
               <input
                 id="task-modal-duedate-input"
                 type="date"
                 value={isoDueDate}
-                onChange={(e) => setIsoDueDate(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setIsoDueDate(val);
+                  if (!val && status === 'Overdue') {
+                    setStatus('To Do');
+                  }
+                }}
                 className={`w-full px-3 py-2 text-xs bg-white border rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
                   errors.dueDate ? 'border-red-500' : 'border-[#E2E8F0]'
                 }`}
@@ -336,14 +343,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({
                 id="task-modal-status-select"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as TaskStatus)}
-                className="w-full px-3 py-2 text-xs bg-white border border-[#E2E8F0] rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9]"
+                className={`w-full px-3 py-2 text-xs bg-white border rounded-lg text-[#1E1B4B] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
+                  errors.status ? 'border-red-500' : 'border-[#E2E8F0]'
+                }`}
               >
-                <option value="In Progress">In Progress</option>
                 <option value="To Do">To Do</option>
+                <option value="In Progress">In Progress</option>
                 <option value="In Review">In Review</option>
                 <option value="Completed">Completed</option>
-                <option value="Overdue">Overdue</option>
+                <option value="Overdue" disabled={!isoDueDate.trim()}>
+                  Overdue {!isoDueDate.trim() ? '(requires due date)' : ''}
+                </option>
               </select>
+              {errors.status && (
+                <p className="text-[11px] text-red-500 mt-1">{errors.status}</p>
+              )}
             </div>
           </div>
 

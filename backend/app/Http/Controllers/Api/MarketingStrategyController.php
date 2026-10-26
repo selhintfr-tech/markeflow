@@ -60,7 +60,7 @@ class MarketingStrategyController extends Controller
     public function store(StoreMarketingStrategyRequest $request)
     {
         $this->access->authorize($request->user(), true);
-        $attributes = $request->safe()->except('audience_ids');
+        $attributes = $request->safe()->except(['audience_ids', 'progress']);
         $strategy = new MarketingStrategy($attributes);
         $strategy->created_by = $request->user()->id;
         $strategy->save();
@@ -82,7 +82,7 @@ class MarketingStrategyController extends Controller
     {
         $this->access->authorize($request->user(), true);
         $record = $this->findStrategy($strategy);
-        $record->fill($request->safe()->except('audience_ids'));
+        $record->fill($request->safe()->except(['audience_ids', 'progress']));
         $record->save();
         if ($request->exists('audience_ids')) {
             $this->syncAudiences($record, $request->validated('audience_ids'));

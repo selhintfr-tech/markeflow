@@ -15,6 +15,8 @@ class SavedReportResource extends JsonResource
             'created_by' => $this->created_by,
             'name' => $this->name,
             'type' => $this->type,
+            'status' => $this->status,
+            'created_by_name' => $this->creator?->name,
             'from_date' => $this->from_date?->toDateString(),
             'to_date' => $this->to_date?->toDateString(),
             'filters' => $this->filters ?? [],

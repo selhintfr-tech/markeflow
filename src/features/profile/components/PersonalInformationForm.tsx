@@ -1,21 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Camera, AlertCircle, X, ChevronDown } from 'lucide-react';
+import { Camera, AlertCircle, ChevronDown } from 'lucide-react';
 import type { UserProfile } from '../../../types';
 
 interface PersonalInformationFormProps {
   initialUser: UserProfile;
-  avatarPreview: string | null;
-  onAvatarChange: (previewUrl: string | null) => void;
   onSave: (updatedUser: UserProfile) => Promise<void>;
   isSaving: boolean;
+  onAvatarUpload: (file: File) => Promise<void>;
+  onAvatarRemove: () => Promise<void>;
+  isAvatarSaving: boolean;
 }
 
 export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = ({
   initialUser,
-  avatarPreview,
-  onAvatarChange,
   onSave,
   isSaving,
+  onAvatarUpload,
+  onAvatarRemove,
+  isAvatarSaving,
 }) => {
   const [fullName, setFullName] = useState(initialUser.name);
   const [email, setEmail] = useState(initialUser.email);
@@ -33,7 +35,6 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
     setPhone(initialUser.phone || '');
     setLanguage(initialUser.language || 'English');
     setTimezone(initialUser.timezone || 'Africa/Casablanca');
-    onAvatarChange(null);
     setFormError(null);
     setUploadError(null);
   };
@@ -43,26 +44,23 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate type
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif'];
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
     if (!validTypes.includes(file.type)) {
-      setUploadError('Invalid format. Please select a JPG, PNG, or GIF file.');
+      setUploadError('Invalid format. Please select a JPG, PNG, or WebP file.');
+      e.target.value = '';
       return;
     }
 
-    // Validate size (max 5MB)
     const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       setUploadError('File exceeds 5MB size limit. Please choose a smaller image.');
+      e.target.value = '';
       return;
     }
 
-    // Generate local preview URL
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      onAvatarChange(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    setUploadError(null);
+    e.target.value = '';
+    void onAvatarUpload(file);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -93,7 +91,7 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
       language,
       timezone,
       initials,
-      avatarUrl: avatarPreview || initialUser.avatarUrl,
+      avatarUrl: initialUser.avatarUrl,
     };
 
     void onSave(updatedUser);
@@ -229,46 +227,36 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
             type="file"
             ref={fileInputRef}
             onChange={handlePhotoSelect}
-            accept="image/jpeg,image/png,image/gif"
+            accept="image/jpeg,image/png,image/webp"
+            disabled={isAvatarSaving}
             className="hidden"
           />
 
           <div className="flex items-center gap-4">
             {/* Dashed Upload Box matching Screenshot 2 */}
             <div
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => !isAvatarSaving && fileInputRef.current?.click()}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click();
+                if ((e.key === 'Enter' || e.key === ' ') && !isAvatarSaving) fileInputRef.current?.click();
               }}
-              className="w-28 h-24 border-2 border-dashed border-[#CBD5E1] hover:border-[#6D28D9] hover:bg-[#F5F3FF]/40 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors bg-[#F8FAFC] group text-center shrink-0"
+              aria-disabled={isAvatarSaving}
+              className={`w-28 h-24 border-2 border-dashed border-[#CBD5E1] hover:border-[#6D28D9] hover:bg-[#F5F3FF]/40 rounded-xl flex flex-col items-center justify-center gap-1.5 transition-colors bg-[#F8FAFC] group text-center shrink-0 ${isAvatarSaving ? 'cursor-wait opacity-70' : 'cursor-pointer'}`}
             >
-              {avatarPreview ? (
+              {initialUser.avatarUrl ? (
                 <div className="relative w-full h-full p-1">
                   <img
-                    src={avatarPreview}
-                    alt="Preview"
+                    src={initialUser.avatarUrl}
+                    alt={`${initialUser.name}'s current profile photo`}
                     className="w-full h-full object-cover rounded-lg"
                   />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onAvatarChange(null);
-                      if (fileInputRef.current) fileInputRef.current.value = '';
-                    }}
-                    className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 shadow-xs hover:bg-red-600 transition-colors"
-                    aria-label="Remove photo"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
                 </div>
               ) : (
                 <>
                   <Camera className="w-5 h-5 text-[#64748B] group-hover:text-[#6D28D9] transition-colors" />
                   <span className="text-[11px] font-medium text-[#475569] group-hover:text-[#6D28D9]">
-                    Upload photo
+                    {isAvatarSaving ? 'Uploading…' : 'Upload photo'}
                   </span>
                 </>
               )}
@@ -277,18 +265,16 @@ export const PersonalInformationForm: React.FC<PersonalInformationFormProps> = (
             {/* Supporting Text */}
             <div className="text-xs text-[#64748B] space-y-0.5">
               <p>Upload a profile photo to personalize your account.</p>
-              <p className="text-[11px] text-[#94A3B8]">JPG, PNG or GIF. Max size 5MB.</p>
-              <p className="text-[11px] text-[#94A3B8]">Photo upload is preview-only; the backend has no upload endpoint.</p>
-              {avatarPreview && (
+              <p className="text-[11px] text-[#94A3B8]">JPG, PNG or WebP. Max size 5MB.</p>
+              {isAvatarSaving && <p role="status" className="text-[11px] text-[#6D28D9]">Saving profile photo…</p>}
+              {initialUser.avatarUrl && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onAvatarChange(null);
-                    if (fileInputRef.current) fileInputRef.current.value = '';
-                  }}
-                  className="text-xs text-red-600 hover:underline pt-1 inline-block"
+                  onClick={() => void onAvatarRemove()}
+                  disabled={isAvatarSaving}
+                  className="text-xs text-red-600 hover:underline pt-1 inline-block disabled:opacity-50"
                 >
-                  Remove current photo
+                  Remove profile photo
                 </button>
               )}
             </div>

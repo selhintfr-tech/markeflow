@@ -73,6 +73,12 @@ class TaskApiTest extends TestCase
             ->assertJsonPath('data.title', 'Approve campaign creative')
             ->assertJsonPath('data.priority', Task::PRIORITY_HIGH)
             ->assertJsonPath('data.status', Task::STATUS_IN_REVIEW);
+        $this->assertDatabaseHas('workspace_audit_logs', [
+            'workspace_id' => $workspace->id,
+            'entity_type' => 'project',
+            'entity_id' => $project->id,
+            'action' => 'project.task_status_changed',
+        ]);
 
         $this->deleteJson('/test-api/tasks/'.$taskId)
             ->assertOk()
@@ -292,6 +298,147 @@ class TaskApiTest extends TestCase
             ->actingAs($owner)
             ->getJson('/test-api/tasks/')
             ->assertForbidden();
+    }
+
+    public function test_task_can_be_created_edited_listed_and_completed_without_a_due_date(): void
+    {
+        $owner = $this->createUser('task-nodue-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'No due project');
+
+        // 1. Create task without due date
+        $created = $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/tasks/', [
+                'title' => 'Task without deadline',
+                'description' => 'Open-ended maintenance task',
+                'project_id' => $project->id,
+                'status' => Task::STATUS_TO_DO,
+                'priority' => Task::PRIORITY_LOW,
+                'due_date' => null,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.title', 'Task without deadline')
+            ->assertJsonPath('data.due_date', null)
+            ->assertJsonPath('data.status', Task::STATUS_TO_DO);
+
+        $taskId = $created->json('data.id');
+
+        // 2. Also create a task WITH a due date
+        $withDueDate = $this->postJson('/test-api/tasks/', [
+            'title' => 'Task with deadline',
+            'project_id' => $project->id,
+            'status' => Task::STATUS_IN_PROGRESS,
+            'due_date' => '2026-11-15',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.due_date', '2026-11-15');
+
+        // 3. List tasks (verifying both appear, and tasks with deadlines are ordered before tasks without)
+        $list = $this->getJson('/test-api/tasks/')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $this->assertSame($withDueDate->json('data.id'), $list->json('data.0.id'));
+        $this->assertSame($taskId, $list->json('data.1.id'));
+
+        // 4. Edit task without due date and complete it
+        $this->putJson('/test-api/tasks/'.$taskId, [
+            'title' => 'Updated task without deadline',
+            'status' => Task::STATUS_COMPLETED,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.title', 'Updated task without deadline')
+            ->assertJsonPath('data.status', Task::STATUS_COMPLETED)
+            ->assertJsonPath('data.due_date', null);
+
+        // 5. Complete task with due date as well
+        $this->putJson('/test-api/tasks/'.$withDueDate->json('data.id'), [
+            'status' => Task::STATUS_COMPLETED,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.status', Task::STATUS_COMPLETED)
+            ->assertJsonPath('data.due_date', '2026-11-15');
+    }
+
+    public function test_task_without_due_date_cannot_be_classified_as_overdue(): void
+    {
+        $owner = $this->createUser('task-overdue-guard@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Guard project');
+
+        // 1. Cannot create task with status Overdue when due_date is null
+        $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/tasks/', [
+                'title' => 'Invalid overdue task',
+                'project_id' => $project->id,
+                'status' => Task::STATUS_OVERDUE,
+                'due_date' => null,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
+
+        // 2. Create normal task without due date
+        $task = $this->postJson('/test-api/tasks/', [
+            'title' => 'Pending task',
+            'project_id' => $project->id,
+            'status' => Task::STATUS_TO_DO,
+            'due_date' => null,
+        ])
+            ->assertCreated();
+
+        $taskId = $task->json('data.id');
+
+        // 3. Cannot update task to Overdue while due_date remains null
+        $this->putJson('/test-api/tasks/'.$taskId, [
+            'status' => Task::STATUS_OVERDUE,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['status']);
+
+        // 4. Create task with past due date and set to Overdue
+        $overdueTask = $this->postJson('/test-api/tasks/', [
+            'title' => 'Legit overdue task',
+            'project_id' => $project->id,
+            'status' => Task::STATUS_OVERDUE,
+            'due_date' => '2026-10-01',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.status', Task::STATUS_OVERDUE);
+
+        // 5. Cannot remove due date while status is Overdue
+        $this->putJson('/test-api/tasks/'.$overdueTask->json('data.id'), [
+            'due_date' => null,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['due_date']);
+    }
+
+    public function test_task_can_be_linked_to_project_without_selecting_campaign(): void
+    {
+        $owner = $this->createUser('task-projonly-owner@example.test');
+        $workspace = $this->createWorkspace($owner);
+        $project = $this->createProject($workspace, $owner, 'Matbaa Lik — Marketing & Sales');
+        $campaign = $this->createCampaign($workspace, $project, $owner, 'TEST — Matbaa Lik Marketing');
+
+        // Link to project without campaign
+        $created = $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/tasks/', [
+                'title' => 'Project-only task for Matbaa Lik',
+                'project_id' => $project->id,
+                'campaign_id' => null,
+                'status' => Task::STATUS_TO_DO,
+                'due_date' => null,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.project.id', $project->id)
+            ->assertJsonPath('data.project.name', 'Matbaa Lik — Marketing & Sales')
+            ->assertJsonPath('data.campaign', null);
+
+        $this->assertSame($project->id, $created->json('data.project_id'));
+        $this->assertNull($created->json('data.campaign_id'));
     }
 
     private function taskPayload(Project $project, ?Campaign $campaign = null, ?User $assignee = null): array

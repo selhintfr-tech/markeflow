@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { ArchiveRecord } from '../archiveService';
 import { ArchiveStatusBadge } from './ArchiveStatusBadge';
+import { ActionDropdown } from '../../../components/ui/ActionDropdown';
 
 interface ArchiveTableProps {
   records: ArchiveRecord[];
@@ -348,70 +349,72 @@ export const ArchiveTable: React.FC<ArchiveTableProps> = ({
                         </button>
 
                         {/* Three-dot menu button */}
-                        <div className="relative" ref={activeMenuRecordId === record.id ? menuRef : undefined}>
+                        <ActionDropdown
+                          isOpen={activeMenuRecordId === record.id}
+                          onClose={() => setActiveMenuRecordId(null)}
+                          ariaLabel={`Actions for record ${record.name}`}
+                          menuWidth={176}
+                          className="w-44 py-1.5 text-left text-xs"
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveMenuRecordId(
+                                  activeMenuRecordId === record.id ? null : record.id
+                                )
+                              }
+                              className="p-1.5 text-[#94A3B8] hover:text-[#475569] rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label="More actions"
+                              aria-expanded={activeMenuRecordId === record.id}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
+                        >
                           <button
                             type="button"
-                            onClick={() =>
-                              setActiveMenuRecordId(
-                                activeMenuRecordId === record.id ? null : record.id
-                              )
-                            }
-                            className="p-1.5 text-[#94A3B8] hover:text-[#475569] rounded-lg hover:bg-slate-100 transition-colors"
-                            aria-label="More actions"
-                            aria-expanded={activeMenuRecordId === record.id}
+                            onClick={() => {
+                              setActiveMenuRecordId(null);
+                              onViewDetails(record);
+                            }}
+                            className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] hover:text-[#6D28D9] transition-colors cursor-pointer"
                           >
-                            <MoreHorizontal className="w-4 h-4" />
+                            <FileText className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>View Details</span>
                           </button>
 
-                          {/* Popover Menu */}
-                          {activeMenuRecordId === record.id && (
-                            <div className="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-lg border border-[#E2E8F0] py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100 text-left">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveMenuRecordId(null);
-                                  onViewDetails(record);
-                                }}
-                                className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] hover:text-[#6D28D9] transition-colors"
-                              >
-                                <FileText className="w-3.5 h-3.5 text-[#94A3B8]" />
-                                <span>View Details</span>
-                              </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuRecordId(null);
+                              onRestore(record);
+                            }}
+                            className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#6D28D9] font-medium hover:bg-[#F5F3FF] transition-colors cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Restore Record</span>
+                          </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveMenuRecordId(null);
-                                  onRestore(record);
-                                }}
-                                className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#6D28D9] font-medium hover:bg-[#F5F3FF] transition-colors"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                                <span>Restore Record</span>
-                              </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleCopyId(record.id, e)}
+                            className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors cursor-pointer"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>{copiedId === record.id ? 'Copied ID!' : 'Copy Record ID'}</span>
+                          </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => handleCopyId(record.id, e)}
-                                className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors"
-                              >
-                                <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />
-                                <span>{copiedId === record.id ? 'Copied ID!' : 'Copy Record ID'}</span>
-                              </button>
+                          <div className="my-1 border-t border-[#F1F5F9]" />
 
-                              <div className="my-1 border-t border-[#F1F5F9]" />
-
-                              <button
-                                type="button"
-                                onClick={(e) => handleExportMetadata(record, e)}
-                                className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors"
-                              >
-                                <Download className="w-3.5 h-3.5 text-[#94A3B8]" />
-                                <span>Export Metadata</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleExportMetadata(record, e)}
+                            className="w-full flex items-center gap-2 px-3.5 py-1.5 text-xs text-[#64748B] hover:bg-slate-50 hover:text-[#1E1B4B] transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3.5 h-3.5 text-[#94A3B8]" />
+                            <span>Export Metadata</span>
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </td>
                   </tr>

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\FinanceController;
+use App\Http\Controllers\Api\FinanceOrderAccountingController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])
@@ -22,4 +23,8 @@ Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])
 
         Route::get('/categories', [FinanceController::class, 'categories']);
         Route::get('/summary', [FinanceController::class, 'summary']);
+        Route::get('/order-profitability', [FinanceOrderAccountingController::class, 'index']);
+        Route::put('/orders/{order}/profitability', [FinanceOrderAccountingController::class, 'update']);
+        Route::post('/orders/{order}/post-to-ledger', [FinanceOrderAccountingController::class, 'postToLedger']);
+        Route::delete('/orders/{order}/post-to-ledger', [FinanceOrderAccountingController::class, 'removeFromLedger']);
     });

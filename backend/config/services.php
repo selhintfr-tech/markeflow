@@ -35,4 +35,11 @@ return [
         ],
     ],
 
+    'ozon' => [
+        'base_url' => env('OZON_EXPRESS_BASE_URL', env('OZON_BASE_URL', 'https://api.ozonexpress.ma')),
+        'api_key' => env('OZON_EXPRESS_API_KEY', env('OZON_API_KEY')),
+        'customer_id' => env('OZON_EXPRESS_CUSTOMER_ID', env('OZON_CUSTOMER_ID')),
+        'dry_run' => env('OZON_EXPRESS_DRY_RUN', env('OZON_DRY_RUN', true)),
+    ],
+
 ];

@@ -6,12 +6,13 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SalesOrder extends Model
 {
     use HasUuids;
 
-    public const STATUSES = ['Pending', 'Confirmed', 'Shipping', 'Delivered', 'Returned', 'Rejected'];
+    public const STATUSES = ['Pending', 'Confirmed', 'Shipping', 'Delivered', 'Returned', 'Rejected', 'Cancelled'];
 
     public const PAYMENT_STATUSES = ['Pending', 'Paid', 'Partially Paid', 'Failed', 'Refunded'];
 
@@ -24,6 +25,21 @@ class SalesOrder extends Model
         'total' => 'decimal:2',
         'items' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::saved(function ($order) {
+            if (!empty($order->workspace_id)) {
+                \App\Services\Analytics\WorkspaceAnalyticsService::invalidateWorkspaceCache($order->workspace_id);
+            }
+        });
+
+        static::deleted(function ($order) {
+            if (!empty($order->workspace_id)) {
+                \App\Services\Analytics\WorkspaceAnalyticsService::invalidateWorkspaceCache($order->workspace_id);
+            }
+        });
+    }
 
     public function customer(): BelongsTo
     {
@@ -38,5 +54,15 @@ class SalesOrder extends Model
     public function statusHistory(): HasMany
     {
         return $this->hasMany(SalesOrderStatusHistory::class, 'order_id')->orderByDesc('created_at');
+    }
+
+    public function financialRecord(): HasOne
+    {
+        return $this->hasOne(SalesOrderFinancialRecord::class, 'order_id');
+    }
+
+    public function financeTransactions(): HasMany
+    {
+        return $this->hasMany(\App\Models\FinanceTransaction::class, 'order_id');
     }
 }

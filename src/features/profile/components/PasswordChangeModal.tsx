@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Lock, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { X, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface PasswordChangeModalProps {
   isOpen: boolean;
@@ -52,8 +52,8 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
       setError('Please enter your current password.');
       return;
     }
-    if (!newPassword || newPassword.length < 8) {
-      setError('New password must be at least 8 characters long.');
+    if (!newPassword || newPassword.length < 12 || !/[A-Za-z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      setError('Use at least 12 characters, including a letter and a number.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -105,15 +105,6 @@ export const PasswordChangeModal: React.FC<PasswordChangeModalProps> = ({
           <div>
             <h3 className="text-lg font-bold text-[#1E1B4B]">Change Password</h3>
             <p className="text-xs text-[#64748B]">Update your account login credentials</p>
-          </div>
-        </div>
-
-        {/* Backend Pending Notice */}
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-start gap-2">
-          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-semibold block">Password route unavailable</span>
-            The current production API routes do not register <code>/api/profile/password</code>.
           </div>
         </div>
 

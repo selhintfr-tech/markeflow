@@ -6,7 +6,7 @@ interface StatCardProps {
   iconBgColor?: string;
   title: string;
   value: string | number;
-  changePercentage: number;
+  changePercentage?: number | null;
   changeLabel?: string;
   onClick?: () => void;
 }
@@ -20,6 +20,9 @@ export const StatCard: React.FC<StatCardProps> = ({
   changeLabel = 'from last month',
   onClick,
 }) => {
+  const hasPercentage = changePercentage !== undefined && changePercentage !== null;
+  const isNegative = hasPercentage && changePercentage < 0;
+
   return (
     <div
       onClick={onClick}
@@ -47,10 +50,16 @@ export const StatCard: React.FC<StatCardProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 mt-2 text-xs">
-          <span className="inline-flex items-center text-[#0D9488] font-semibold">
-            <TrendingUp className="w-3.5 h-3.5 mr-1 stroke-[2.5]" />
-            {changePercentage > 0 ? `+${changePercentage}%` : `${changePercentage}%`}
-          </span>
+          {hasPercentage && (
+            <span
+              className={`inline-flex items-center font-semibold ${
+                isNegative ? 'text-rose-600' : 'text-[#0D9488]'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 mr-1 stroke-[2.5]" />
+              {changePercentage > 0 ? `+${changePercentage}%` : `${changePercentage}%`}
+            </span>
+          )}
           <span className="text-[#94A3B8]">{changeLabel}</span>
         </div>
       </div>

@@ -27,6 +27,7 @@ import {
   type SwotCategoryBackend,
 } from '../research/researchService';
 import { ApiError } from '../api/apiClient';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
 import type {
   SwotAnalysisData,
   SwotItem,
@@ -618,42 +619,50 @@ export const SwotAnalysisPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="relative shrink-0 print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
-                          className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                      <div className="shrink-0 print:hidden">
+                        <ActionDropdown
+                          isOpen={openDropdownId === item.id}
+                          onClose={() => setOpenDropdownId(null)}
+                          ariaLabel={`Actions for ${item.title}`}
+                          className="w-32 py-1 text-left text-xs"
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
+                              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label={`Actions for ${item.title}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openDropdownId === item.id && (
-                          <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-md py-1 z-20">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditItem('strengths', item)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2"
-                            >
-                              <Edit2 className="w-3 h-3 text-[#64748B]" />
-                              <span>Edit item</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                setDeleteItemTarget({
-                                  category: 'strengths',
-                                  itemId: item.id,
-                                  itemTitle: item.title,
-                                });
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete item</span>
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleOpenEditItem('strengths', item);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2 cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3 text-[#64748B]" />
+                            <span>Edit item</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              setDeleteItemTarget({
+                                category: 'strengths',
+                                itemId: item.id,
+                                itemTitle: item.title,
+                              });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete item</span>
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   ))}
@@ -703,42 +712,50 @@ export const SwotAnalysisPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="relative shrink-0 print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
-                          className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                      <div className="shrink-0 print:hidden">
+                        <ActionDropdown
+                          isOpen={openDropdownId === item.id}
+                          onClose={() => setOpenDropdownId(null)}
+                          ariaLabel={`Actions for ${item.title}`}
+                          className="w-32 py-1 text-left text-xs"
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
+                              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label={`Actions for ${item.title}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openDropdownId === item.id && (
-                          <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-md py-1 z-20">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditItem('weaknesses', item)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2"
-                            >
-                              <Edit2 className="w-3 h-3 text-[#64748B]" />
-                              <span>Edit item</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                setDeleteItemTarget({
-                                  category: 'weaknesses',
-                                  itemId: item.id,
-                                  itemTitle: item.title,
-                                });
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete item</span>
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleOpenEditItem('weaknesses', item);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2 cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3 text-[#64748B]" />
+                            <span>Edit item</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              setDeleteItemTarget({
+                                category: 'weaknesses',
+                                itemId: item.id,
+                                itemTitle: item.title,
+                              });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete item</span>
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   ))}
@@ -788,42 +805,50 @@ export const SwotAnalysisPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="relative shrink-0 print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
-                          className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                      <div className="shrink-0 print:hidden">
+                        <ActionDropdown
+                          isOpen={openDropdownId === item.id}
+                          onClose={() => setOpenDropdownId(null)}
+                          ariaLabel={`Actions for ${item.title}`}
+                          className="w-32 py-1 text-left text-xs"
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
+                              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label={`Actions for ${item.title}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openDropdownId === item.id && (
-                          <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-md py-1 z-20">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditItem('opportunities', item)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2"
-                            >
-                              <Edit2 className="w-3 h-3 text-[#64748B]" />
-                              <span>Edit item</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                setDeleteItemTarget({
-                                  category: 'opportunities',
-                                  itemId: item.id,
-                                  itemTitle: item.title,
-                                });
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete item</span>
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleOpenEditItem('opportunities', item);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2 cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3 text-[#64748B]" />
+                            <span>Edit item</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              setDeleteItemTarget({
+                                category: 'opportunities',
+                                itemId: item.id,
+                                itemTitle: item.title,
+                              });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3" />
+                            <span>Delete item</span>
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   ))}
@@ -873,42 +898,50 @@ export const SwotAnalysisPage: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="relative shrink-0 print:hidden">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
-                          className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+                      <div className="shrink-0 print:hidden">
+                        <ActionDropdown
+                          isOpen={openDropdownId === item.id}
+                          onClose={() => setOpenDropdownId(null)}
+                          ariaLabel={`Actions for ${item.title}`}
+                          className="w-32 py-1 text-left text-xs"
+                          trigger={
+                            <button
+                              type="button"
+                              onClick={() => setOpenDropdownId(openDropdownId === item.id ? null : item.id)}
+                              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label={`Actions for ${item.title}`}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                          }
                         >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {openDropdownId === item.id && (
-                          <div className="absolute right-0 mt-1 w-32 bg-white rounded-lg border border-[#E2E8F0] shadow-md py-1 z-20">
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEditItem('threats', item)}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2"
-                            >
-                              <Edit2 className="w-3 h-3 text-[#64748B]" />
-                              <span>Edit item</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOpenDropdownId(null);
-                                setDeleteItemTarget({
-                                  category: 'threats',
-                                  itemId: item.id,
-                                  itemTitle: item.title,
-                                });
-                              }}
-                              className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete item</span>
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              handleOpenEditItem('threats', item);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] flex items-center gap-2 cursor-pointer"
+                          >
+                            <Edit2 className="w-3 h-3 text-[#64748B]" />
+                            <span>Edit item</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenDropdownId(null);
+                              setDeleteItemTarget({
+                                category: 'threats',
+                                itemId: item.id,
+                                itemTitle: item.title,
+                              });
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-[#DC2626] hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Delete item</span>
+                          </button>
+                        </ActionDropdown>
                       </div>
                     </div>
                   ))}

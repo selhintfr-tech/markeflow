@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import type { WorkspaceDetail } from '../../types';
+import { ActionDropdown } from '../../components/ui/ActionDropdown';
 
 export const WorkspacesPage: React.FC = () => {
   const {
@@ -427,51 +428,65 @@ export const WorkspacesPage: React.FC = () => {
                           Open Workspace
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActiveMenuWorkspaceId(
-                              activeMenuWorkspaceId === ws.id ? null : ws.id
-                            )
-                          }
-                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer"
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-
-                        {/* Three-dot Context Menu */}
-                        {activeMenuWorkspaceId === ws.id && (
-                          <div className="absolute right-0 top-full mt-1 w-44 rounded-lg bg-white border border-[#E2E8F0] shadow-lg py-1 z-30 text-left animate-in fade-in zoom-in-95 duration-100">
-                            {!isCurrent && (
-                              <button
-                                type="button"
-                                onClick={() => handleSwitchWorkspace(ws)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF]"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 text-[#6D28D9]" />
-                                <span>Switch to workspace</span>
-                              </button>
-                            )}
+                        <ActionDropdown
+                          isOpen={activeMenuWorkspaceId === ws.id}
+                          onClose={() => setActiveMenuWorkspaceId(null)}
+                          ariaLabel={`Actions for workspace ${ws.name}`}
+                          menuWidth={176}
+                          className="w-44 py-1 text-xs text-[#1E1B4B]"
+                          trigger={
                             <button
                               type="button"
-                              onClick={() => openEditModal(ws)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF]"
+                              onClick={() =>
+                                setActiveMenuWorkspaceId(
+                                  activeMenuWorkspaceId === ws.id ? null : ws.id
+                                )
+                              }
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-[#475569] hover:bg-slate-100 transition-colors cursor-pointer"
+                              aria-label={`Actions for workspace ${ws.name}`}
                             >
-                              <Pencil className="w-3.5 h-3.5 text-[#64748B]" />
-                              <span>Edit workspace</span>
+                              <MoreHorizontal className="w-4 h-4" />
                             </button>
-                            {workspaces.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setDeleteConfirmId(ws.id)}
-                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                                <span>Delete workspace</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
+                          }
+                        >
+                          {!isCurrent && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuWorkspaceId(null);
+                                handleSwitchWorkspace(ws);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] cursor-pointer"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-[#6D28D9]" />
+                              <span>Switch to workspace</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuWorkspaceId(null);
+                              openEditModal(ws);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-[#F5F3FF] cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-[#64748B]" />
+                            <span>Edit workspace</span>
+                          </button>
+                          {workspaces.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveMenuWorkspaceId(null);
+                                setDeleteConfirmId(ws.id);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                              <span>Delete workspace</span>
+                            </button>
+                          )}
+                        </ActionDropdown>
                       </div>
                     </td>
                   </tr>

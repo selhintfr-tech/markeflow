@@ -13,6 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { TaskItem, TaskStatus } from '../types';
+import { ActionDropdown } from '../../../components/ui/ActionDropdown';
 
 interface TaskDetailsPanelProps {
   task: TaskItem;
@@ -110,49 +111,55 @@ export const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
             <div className="mt-2">{renderStatusPill()}</div>
           </div>
 
-          <div className="flex items-center gap-1 shrink-0 relative">
-            <button
-              type="button"
-              onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+          <div className="flex items-center gap-1 shrink-0">
+            <ActionDropdown
+              isOpen={isMoreMenuOpen}
+              onClose={() => setIsMoreMenuOpen(false)}
+              ariaLabel={`Actions for task ${task.title}`}
+              className="w-36 py-1 text-left text-xs"
+              trigger={
+                <button
+                  type="button"
+                  onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                  className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+                  aria-label="More task options"
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
+              }
             >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  onEditTask(task);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5 text-[#64748B]" />
+                Edit Task
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMoreMenuOpen(false);
+                  onDeleteTask(task.id);
+                }}
+                className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                Delete Task
+              </button>
+            </ActionDropdown>
+
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors"
+              className="p-1 rounded text-[#94A3B8] hover:text-[#1E1B4B] hover:bg-slate-100 transition-colors cursor-pointer"
+              aria-label="Close task details"
             >
               <X className="w-4 h-4" />
             </button>
-
-            {/* More Menu Dropdown */}
-            {isMoreMenuOpen && (
-              <div className="absolute right-0 top-8 w-36 bg-white rounded-lg shadow-lg border border-[#E2E8F0] py-1 z-30">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onEditTask(task);
-                  }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-[#1E1B4B] hover:bg-slate-50 flex items-center gap-2"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-[#64748B]" />
-                  Edit Task
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsMoreMenuOpen(false);
-                    onDeleteTask(task.id);
-                  }}
-                  className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                  Delete Task
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -206,7 +213,7 @@ export const TaskDetailsPanel: React.FC<TaskDetailsPanelProps> = ({
               <span>Due date</span>
             </div>
             <div className="text-xs font-semibold text-[#1E1B4B] mt-1">
-              {task.dueDate}
+              {task.dueDate || 'No deadline'}
             </div>
           </div>
 

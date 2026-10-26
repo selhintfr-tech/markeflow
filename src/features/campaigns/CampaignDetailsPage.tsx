@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ChevronRight,
@@ -64,6 +64,31 @@ const CustomSpendTooltip = ({ active, payload, label, currency }: any) => {
   return null;
 };
 
+const CampaignDetailsSkeleton: React.FC = () => (
+  <section role="status" aria-label="Loading campaign details" className="space-y-6">
+    <div className="h-3 w-40 animate-pulse rounded bg-slate-200" />
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <h1 className="text-2xl font-bold tracking-tight text-[#1E1B4B]">Campaign Details</h1>
+      <div className="flex gap-2">
+        <div className="h-9 w-32 animate-pulse rounded-lg bg-slate-200" />
+        <div className="h-9 w-28 animate-pulse rounded-lg bg-slate-200" />
+      </div>
+    </div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="rounded-xl border border-[#E2E8F0] bg-white p-5">
+          <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+          <div className="mt-4 h-7 w-28 animate-pulse rounded bg-slate-100" />
+        </div>
+      ))}
+    </div>
+    <div className="rounded-xl border border-[#E2E8F0] bg-white p-5">
+      <div className="mb-5 h-4 w-40 animate-pulse rounded bg-slate-200" />
+      <div className="h-56 animate-pulse rounded-lg bg-slate-50" />
+    </div>
+  </section>
+);
+
 export const CampaignDetailsPage: React.FC = () => {
   const { campaignId } = useParams<{ campaignId: string }>();
   const navigate = useNavigate();
@@ -74,8 +99,10 @@ export const CampaignDetailsPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const campaignLoadVersion = useRef(0);
 
   const reloadCampaigns = useCallback(async () => {
+    const request = ++campaignLoadVersion.current;
     if (!hasWorkspace) {
       setCampaigns([]);
       setProjects([]);
@@ -89,6 +116,7 @@ export const CampaignDetailsPage: React.FC = () => {
         campaignService.list(currentWorkspace.id),
         projectService.list(currentWorkspace.id),
       ]);
+      if (request !== campaignLoadVersion.current) return;
       setProjects(workspaceProjects);
       const projectById = new Map(workspaceProjects.map((project) => [project.id, project]));
       setCampaigns(records.map((record) => ({
@@ -102,8 +130,8 @@ export const CampaignDetailsPage: React.FC = () => {
         platform: record.platform,
         channel: record.channel,
         startDate: record.start_date,
-        endDate: record.end_date,
-        periodLabel: `${record.start_date} – ${record.end_date}`,
+        endDate: record.end_date ?? null,
+        periodLabel: record.end_date ? `${record.start_date} – ${record.end_date}` : `${record.start_date} – Ongoing`,
         adBudget: Number(record.budget),
         adSpend: Number(record.spend),
         leads: record.leads,
@@ -113,16 +141,21 @@ export const CampaignDetailsPage: React.FC = () => {
         objectiveType: record.objective || undefined,
       })));
     } catch (error) {
-      setCampaigns([]);
+        if (request !== campaignLoadVersion.current) return;
+        setCampaigns([]);
       setProjects([]);
       setLoadError(error instanceof Error ? error.message : 'Unable to load campaign.');
     } finally {
-      setIsLoading(false);
+      if (request === campaignLoadVersion.current) setIsLoading(false);
     }
   }, [hasWorkspace, currentWorkspace.id, currentWorkspace.name]);
 
   useEffect(() => {
-    if (!isLoadingWorkspaces) void reloadCampaigns();
+    if (isLoadingWorkspaces) return;
+    void reloadCampaigns();
+    return () => {
+      campaignLoadVersion.current += 1;
+    };
   }, [isLoadingWorkspaces, reloadCampaigns]);
 
   // Current active campaign
@@ -155,7 +188,7 @@ export const CampaignDetailsPage: React.FC = () => {
         channel: campaignData.channel,
         objective: campaignData.objectiveType || null,
         start_date: campaignData.startDate,
-        end_date: campaignData.endDate,
+        end_date: campaignData.endDate || null,
         status: campaignData.status,
         budget: campaignData.adBudget,
       });
@@ -169,8 +202,8 @@ export const CampaignDetailsPage: React.FC = () => {
         platform: saved.platform,
         channel: saved.channel,
         startDate: saved.start_date,
-        endDate: saved.end_date,
-        periodLabel: `${saved.start_date} – ${saved.end_date}`,
+        endDate: saved.end_date ?? null,
+        periodLabel: saved.end_date ? `${saved.start_date} – ${saved.end_date}` : `${saved.start_date} – Ongoing`,
         adBudget: Number(saved.budget),
         status: saved.status,
         objectiveType: saved.objective || undefined,
@@ -247,7 +280,7 @@ export const CampaignDetailsPage: React.FC = () => {
   };
 
   if (isLoading || isLoadingWorkspaces) {
-    return <div role="status" className="p-8 text-center text-sm text-[#64748B]">Loading campaign…</div>;
+    return <CampaignDetailsSkeleton />;
   }
   if (!hasWorkspace) {
     return <div role="alert" className="m-8 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Select an active workspace to view campaigns.</div>;
@@ -411,7 +444,7 @@ export const CampaignDetailsPage: React.FC = () => {
           <Calendar className="w-4 h-4 text-[#64748B]" />
           <div>
             <div className="font-semibold text-[#1E1B4B]">
-              {campaign.startDate} – {campaign.endDate}
+              {campaign.startDate} – {campaign.endDate || 'Ongoing'}
             </div>
             <div className="text-[10px] text-[#94A3B8]">Period</div>
           </div>

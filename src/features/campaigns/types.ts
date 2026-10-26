@@ -13,7 +13,7 @@ export interface CampaignItem {
   platform: CampaignPlatform;
   channel: string;
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   periodLabel?: string;
   adBudget: number;
   adSpend: number;

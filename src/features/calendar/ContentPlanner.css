@@ -1,0 +1,131 @@
+.content-form-modal {
+  display: flex;
+  flex-direction: column;
+  max-height: 94dvh;
+}
+
+.content-form-header {
+  flex: 0 0 auto;
+}
+
+.content-form {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+
+.content-form-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.content-form-field > span {
+  display: block;
+}
+
+.content-form-field > input:not([type='checkbox']),
+.content-form-field > select,
+.content-form-field > textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  background-color: #fff;
+  padding: 0.625rem 0.75rem;
+  color: #1e293b;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.content-form-field > select {
+  padding-right: 2rem;
+}
+
+.content-form-field > textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.content-form-field > textarea[rows='2'] {
+  min-height: 4rem;
+}
+
+.content-form-field > input[type='file'] {
+  min-height: auto;
+  padding: 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.content-form-field > input[type='file']::file-selector-button {
+  margin-right: 0.625rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: #f3e8ff;
+  padding: 0.375rem 0.625rem;
+  color: #6d28d9;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.content-form-field > input:not([type='checkbox']):focus,
+.content-form-field > select:focus,
+.content-form-field > textarea:focus {
+  border-color: #7c3aed;
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(124 58 237 / 15%);
+}
+
+.content-form-field > input:disabled,
+.content-form-field > select:disabled,
+.content-form-field > textarea:disabled {
+  cursor: not-allowed;
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
+.content-form-field > input::placeholder,
+.content-form-field > textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.content-form-timezone {
+  box-sizing: border-box;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+html[data-theme='dark'] .content-form-field {
+  color: #cbd5e1;
+}
+
+html[data-theme='dark'] .content-form-field > input:not([type='checkbox']),
+html[data-theme='dark'] .content-form-field > select,
+html[data-theme='dark'] .content-form-field > textarea {
+  border-color: #475569;
+  background-color: #111827;
+  color: #e5e7eb;
+}
+
+html[data-theme='dark'] .content-form-field > input:disabled,
+html[data-theme='dark'] .content-form-field > select:disabled,
+html[data-theme='dark'] .content-form-field > textarea:disabled {
+  background-color: #1f2937;
+  color: #94a3b8;
+}
+
+@media (max-width: 639px) {
+  .content-form-modal {
+    max-height: calc(100dvh - 1.5rem);
+  }
+}

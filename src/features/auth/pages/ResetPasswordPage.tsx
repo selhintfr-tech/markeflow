@@ -1,231 +1,163 @@
 import React, { useState } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle2, Loader2, KeyRound } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertCircle, ArrowRight, CheckCircle2, KeyRound, Loader2, Lock, Mail } from 'lucide-react';
 import { AuthLayout } from '../components/AuthLayout';
 import { authService } from '../services/authService';
+
+const inputClass = 'w-full rounded-lg border border-[#E2E8F0] bg-white px-3.5 py-2.5 text-sm text-[#1E1B4B] placeholder:text-[#94A3B8] focus:outline-none focus:ring-1 focus:ring-[#6D28D9] disabled:opacity-60';
 
 export const ResetPasswordPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-
-  const token = searchParams.get('token') || '';
-  const emailParam = searchParams.get('email') || '';
-
-  const [email] = useState(emailParam);
+  const email = searchParams.get('email') || '';
+  const [code, setCode] = useState('');
+  const [recoveryToken, setRecoveryToken] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState('');
 
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [errors, setErrors] = useState<{ password?: string; confirmPassword?: string }>({});
-
-  const validate = () => {
-    const newErrors: typeof errors = {};
-
-    if (!password) {
-      newErrors.password = 'New password is required.';
-    } else if (password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters long.';
+  const submitCode = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (!email) {
+      setError('The recovery email is missing. Request a new verification code.');
+      return;
     }
-
-    if (!confirmPassword) {
-      newErrors.confirmPassword = 'Confirm your new password.';
-    } else if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match.';
+    if (!/^\d{6}$/.test(code)) {
+      setError('Enter the six-digit code from your email.');
+      return;
     }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    setLoading(true);
+    const response = await authService.verifyRecoveryCode({ email, code });
+    setLoading(false);
+    if (!response.success || !response.recoveryToken) {
+      setError(response.message || 'That code is incorrect, expired, or unavailable. Request a new code.');
+      return;
+    }
+    setRecoveryToken(response.recoveryToken);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage(null);
-
-    if (!validate()) return;
-
-    setIsLoading(true);
-
-    try {
-      const response = await authService.resetPassword({
-        token,
-        email,
-        password,
-        password_confirmation: confirmPassword,
-      });
-
-      if (response.success) {
-        setIsSuccess(true);
-        setTimeout(() => navigate('/login'), 3000);
-      } else {
-        setErrorMessage(response.message || 'Password reset could not be completed.');
-      }
-    } catch {
-      setErrorMessage('Unable to connect to password recovery service.');
-    } finally {
-      setIsLoading(false);
+  const submitPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (password.length < 12 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      setError('Use at least 12 characters, including a letter and a number.');
+      return;
     }
+    if (password !== passwordConfirmation) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setLoading(true);
+    const response = await authService.resetPassword({
+      recovery_token: recoveryToken,
+      email,
+      password,
+      password_confirmation: passwordConfirmation,
+    });
+    setLoading(false);
+    if (!response.success) {
+      setError(response.message || 'Password reset could not be completed. Verify your email code again.');
+      return;
+    }
+    setSuccess(true);
+    window.setTimeout(() => navigate('/login', { replace: true }), 2500);
   };
 
   return (
     <AuthLayout>
       <div className="space-y-6">
-        <div className="w-14 h-14 rounded-2xl bg-[#F5F3FF] text-[#6D28D9] flex items-center justify-center">
-          <KeyRound className="w-6 h-6 stroke-[2.2]" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F5F3FF] text-[#6D28D9]">
+          {success ? <CheckCircle2 className="h-6 w-6" /> : recoveryToken ? <Lock className="h-6 w-6" /> : <KeyRound className="h-6 w-6" />}
         </div>
-
         <div>
-          <h2 className="text-3xl sm:text-[34px] font-extrabold text-[#1E1B4B] tracking-tight">
-            Set new password
+          <h2 className="text-3xl font-extrabold tracking-tight text-[#1E1B4B]">
+            {success ? 'Password updated' : recoveryToken ? 'Choose a new password' : 'Verify your email'}
           </h2>
-          <p className="text-sm sm:text-base text-[#64748B] mt-1.5 leading-relaxed">
-            Please enter your new password to secure your account.
+          <p className="mt-2 text-sm leading-relaxed text-[#64748B]">
+            {success
+              ? 'Your password was changed successfully. Redirecting you to sign in...'
+              : recoveryToken
+                ? 'Your email is verified. Choose a strong password for your account.'
+                : `Enter the six-digit code sent to ${email || 'your email address'}. Codes expire after 10 minutes.`}
           </p>
         </div>
 
-        {isSuccess ? (
-          <div className="p-5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2.5 text-[#059669]">
-              <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <h4 className="font-bold text-sm text-[#065F46]">Password Updated</h4>
-            </div>
-            <p className="text-xs text-[#065F46] leading-relaxed">
-              Your password has been successfully updated. Redirecting you to sign in...
-            </p>
-            <div className="pt-2 border-t border-[#A7F3D0]/50">
-              <Link to="/login" className="font-bold text-[#6D28D9] hover:underline text-xs">
-                Proceed to sign in immediately →
-              </Link>
-            </div>
+        {error && (
+          <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <p>{error}</p>
           </div>
+        )}
+
+        {success ? (
+          <Link to="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-[#6D28D9] hover:underline">
+            Sign in now <ArrowRight className="h-4 w-4" />
+          </Link>
+        ) : recoveryToken ? (
+          <form onSubmit={submitPassword} className="space-y-4">
+            <label className="block text-xs font-semibold text-[#1E1B4B]">
+              New password
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={`${inputClass} mt-1.5`}
+                disabled={loading}
+                required
+              />
+            </label>
+            <p className="-mt-2 text-[11px] text-[#64748B]">At least 12 characters, including a letter and a number.</p>
+            <label className="block text-xs font-semibold text-[#1E1B4B]">
+              Confirm new password
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={passwordConfirmation}
+                onChange={(event) => setPasswordConfirmation(event.target.value)}
+                className={`${inputClass} mt-1.5`}
+                disabled={loading}
+                required
+              />
+            </label>
+            <button type="submit" disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#5B21B6] disabled:opacity-60">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
+              Update password
+            </button>
+          </form>
         ) : (
-          <>
-            {errorMessage && (
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="leading-relaxed">
-                  <p className="font-semibold text-amber-900">Backend Notice</p>
-                  <p className="mt-0.5">{errorMessage}</p>
-                </div>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-              <div>
-                <label
-                  htmlFor="new-password-input"
-                  className="block text-xs font-semibold text-[#1E1B4B] mb-1.5"
-                >
-                  New password
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#94A3B8]">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    id="new-password-input"
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
-                    }}
-                    placeholder="Enter new password"
-                    autoComplete="new-password"
-                    disabled={isLoading}
-                    className={`w-full pl-10 pr-10 py-2.5 text-xs sm:text-sm bg-white border rounded-lg text-[#1E1B4B] placeholder:text-[#94A3B8] transition-colors focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
-                      errors.password ? 'border-red-500 bg-red-50/20' : 'border-[#E2E8F0] hover:border-slate-300'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[#94A3B8] hover:text-[#64748B] transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p className="text-[11px] text-red-500 mt-1">{errors.password}</p>
-                )}
-              </div>
-
-              <div>
-                <label
-                  htmlFor="confirm-new-password-input"
-                  className="block text-xs font-semibold text-[#1E1B4B] mb-1.5"
-                >
-                  Confirm new password
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#94A3B8]">
-                    <Lock className="w-4 h-4" />
-                  </div>
-                  <input
-                    id="confirm-new-password-input"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => {
-                      setConfirmPassword(e.target.value);
-                      if (errors.confirmPassword)
-                        setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
-                    }}
-                    placeholder="Confirm new password"
-                    autoComplete="new-password"
-                    disabled={isLoading}
-                    className={`w-full pl-10 pr-10 py-2.5 text-xs sm:text-sm bg-white border rounded-lg text-[#1E1B4B] placeholder:text-[#94A3B8] transition-colors focus:outline-none focus:ring-1 focus:ring-[#6D28D9] ${
-                      errors.confirmPassword
-                        ? 'border-red-500 bg-red-50/20'
-                        : 'border-[#E2E8F0] hover:border-slate-300'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-[#94A3B8] hover:text-[#64748B] transition-colors"
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.confirmPassword && (
-                  <p className="text-[11px] text-red-500 mt-1">{errors.confirmPassword}</p>
-                )}
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full py-2.5 px-4 bg-[#6D28D9] hover:bg-[#5B21B6] active:bg-[#4C1D95] text-white text-xs sm:text-sm font-semibold rounded-lg shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Updating password...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Reset password</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </>
+          <form onSubmit={submitCode} className="space-y-4">
+            <label className="block text-xs font-semibold text-[#1E1B4B]">
+              Six-digit verification code
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                className={`${inputClass} mt-1.5 text-center text-lg tracking-[0.4em]`}
+                disabled={loading}
+                required
+              />
+            </label>
+            <button type="submit" disabled={loading || !email} className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#6D28D9] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#5B21B6] disabled:opacity-60">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              Verify code
+            </button>
+            <Link to="/forgot-password" className="block text-center text-xs font-semibold text-[#6D28D9] hover:underline">
+              Request a new code
+            </Link>
+          </form>
         )}
 
         <div className="text-center pt-2">
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-[#6D28D9] hover:underline"
-          >
-            <span>Back to sign in</span>
-            <ArrowRight className="w-4 h-4" />
+          <Link to="/login" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#6D28D9] hover:underline">
+            Back to sign in <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </div>

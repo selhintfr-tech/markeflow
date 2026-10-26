@@ -72,6 +72,27 @@ export interface CrmCustomer {
   notes: string | null;
 }
 
+export interface CrmSalesCustomer {
+  id: string;
+  first_name: string;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  orders_count?: number;
+}
+
+export interface CrmSalesOrder {
+  id: string;
+  order_number: string;
+  status: string;
+  payment_status: string;
+  total: string;
+  currency: string;
+  customer: CrmSalesCustomer;
+  created_at: string;
+}
+
 export interface CrmStage {
   id: string;
   pipeline_id: string;
@@ -175,6 +196,31 @@ export const crmService = {
   createCustomer: (workspaceId: string, body: Record<string, unknown>) => item<CrmCustomer>(`${base}/customers`, workspaceId, 'POST', body),
   updateCustomer: (workspaceId: string, id: string, body: Record<string, unknown>) => item<CrmCustomer>(`${base}/customers/${id}`, workspaceId, 'PATCH', body),
   deleteCustomer: (workspaceId: string, id: string) => item<void>(`${base}/customers/${id}`, workspaceId, 'DELETE'),
+  async salesCustomers(workspaceId: string): Promise<CrmSalesCustomer[]> {
+    const response = await apiRequest<{ data: CrmSalesCustomer[] }>('/api/sales/customers', { workspaceId });
+    return response.data;
+  },
+  async updateSalesCustomer(workspaceId: string, id: string, body: Partial<Omit<CrmSalesCustomer, 'id' | 'orders_count'>>): Promise<CrmSalesCustomer> {
+    const response = await apiRequest<{ data: CrmSalesCustomer }>(`/api/sales/customers/${id}`, {
+      workspaceId,
+      method: 'PATCH',
+      body,
+    });
+    return response.data;
+  },
+  async deleteSalesCustomer(workspaceId: string, id: string): Promise<{ message: string; data: { id: string; first_name: string; last_name: string | null } }> {
+    return apiRequest<{ message: string; data: { id: string; first_name: string; last_name: string | null } }>(`/api/sales/customers/${id}`, {
+      workspaceId,
+      method: 'DELETE',
+    });
+  },
+  async salesOrdersForCustomer(workspaceId: string, customer: CrmSalesCustomer): Promise<CrmSalesOrder[]> {
+    const query = new URLSearchParams({
+      search: customer.email || customer.first_name,
+    });
+    const response = await apiRequest<{ data: CrmSalesOrder[] }>(`/api/sales/orders?${query}`, { workspaceId });
+    return response.data.filter((order) => String(order.customer.id) === String(customer.id));
+  },
 
   async pipelines(workspaceId: string): Promise<CrmPipeline[]> {
     const response = await apiRequest<ApiCollection<CrmPipeline>>(`${base}/pipelines`, { workspaceId });

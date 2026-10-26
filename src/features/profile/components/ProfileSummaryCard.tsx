@@ -4,14 +4,12 @@ import type { UserProfile } from '../../../types';
 
 interface ProfileSummaryCardProps {
   user: UserProfile;
-  avatarPreview: string | null;
   showSuccessAlert: boolean;
   onDismissAlert: () => void;
 }
 
 export const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
   user,
-  avatarPreview,
   showSuccessAlert,
   onDismissAlert,
 }) => {
@@ -19,16 +17,19 @@ export const ProfileSummaryCard: React.FC<ProfileSummaryCardProps> = ({
     <div className="bg-white rounded-xl border border-[#E2E8F0] p-6 shadow-xs">
       <div className="flex items-start gap-5">
         {/* Large Lavender Avatar */}
-        <div className="w-20 h-20 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center text-2xl font-bold border border-[#DDD6FE] shrink-0 overflow-hidden shadow-2xs">
-          {avatarPreview || user.avatarUrl ? (
+        <div className="relative w-20 h-20 rounded-full bg-[#EDE9FE] text-[#6D28D9] flex items-center justify-center text-2xl font-bold border border-[#DDD6FE] shrink-0 overflow-hidden shadow-2xs">
+          {user.avatarUrl && (
             <img
-              src={avatarPreview || user.avatarUrl}
+              key={user.avatarUrl}
+              src={user.avatarUrl}
               alt={user.name}
-              className="w-full h-full object-cover"
+              onError={(event) => {
+                event.currentTarget.style.display = 'none';
+              }}
+              className="absolute inset-0 w-full h-full object-cover"
             />
-          ) : (
-            <span>{user.initials}</span>
           )}
+          <span>{user.initials}</span>
         </div>
 
         {/* User Metadata */}

@@ -55,9 +55,24 @@ class UpdateTaskRequest extends FormRequest
             ],
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'description' => ['sometimes', 'nullable', 'string', 'max:10000'],
-            'status' => ['sometimes', 'required', 'string', Rule::in(Task::STATUSES)],
+            'status' => [
+                'sometimes',
+                'required',
+                'string',
+                Rule::in(Task::STATUSES),
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $task = $this->currentTask();
+                    $effectiveDueDate = $this->has('due_date')
+                        ? $this->input('due_date')
+                        : $task?->due_date?->toDateString();
+
+                    if ($value === Task::STATUS_OVERDUE && empty($effectiveDueDate)) {
+                        $fail('A task without a due date cannot be classified as Overdue.');
+                    }
+                },
+            ],
             'priority' => ['sometimes', 'required', 'string', Rule::in(Task::PRIORITIES)],
-            'due_date' => ['sometimes', 'required', 'date'],
+            'due_date' => ['sometimes', 'nullable', 'date'],
             'workspace_id' => ['prohibited'],
             'created_by' => ['prohibited'],
             'owner_id' => ['prohibited'],
@@ -72,6 +87,19 @@ class UpdateTaskRequest extends FormRequest
                 $task = $this->currentTask();
                 if (! $task) {
                     return;
+                }
+
+                $effectiveDueDate = $this->has('due_date')
+                    ? $this->input('due_date')
+                    : $task->due_date?->toDateString();
+
+                $effectiveStatus = $this->has('status')
+                    ? $this->input('status')
+                    : $task->status;
+
+                if (empty($effectiveDueDate) && $effectiveStatus === Task::STATUS_OVERDUE) {
+                    $errorKey = $this->has('due_date') ? 'due_date' : 'status';
+                    $validator->errors()->add($errorKey, 'A task without a due date cannot be classified as Overdue.');
                 }
 
                 $projectId = $this->input('project_id', $task->project_id);
@@ -94,8 +122,14 @@ class UpdateTaskRequest extends FormRequest
 
     private function currentTask(): ?Task
     {
-        $taskId = $this->route('task');
+        $task = $this->route('task');
 
-        return is_string($taskId) ? Task::query()->find($taskId) : null;
+        if ($task instanceof Task) {
+            return $task;
+        }
+
+        return is_string($task)
+            ? Task::query()->where('workspace_id', app(TenantContext::class)->getWorkspaceId())->find($task)
+            : null;
     }
 }

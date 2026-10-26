@@ -13,6 +13,7 @@ class UpdateReportRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:255'],
             'type' => ['sometimes', 'required', 'string', Rule::in(SavedReport::TYPES)],
+            'status' => ['sometimes', 'required', 'string', Rule::in(SavedReport::STATUSES)],
             'from_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'to_date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'filters' => ['sometimes', 'array'],

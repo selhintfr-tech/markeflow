@@ -61,7 +61,7 @@ export const ForgotPasswordPage: React.FC = () => {
             Reset your password
           </h2>
           <p className="text-sm sm:text-base text-[#64748B] mt-2 max-w-sm leading-relaxed">
-            Enter your email address and we’ll send you a secure reset link.
+            Enter your email address and we’ll send a six-digit verification code.
           </p>
         </div>
 
@@ -70,22 +70,15 @@ export const ForgotPasswordPage: React.FC = () => {
           <div className="p-5 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0] space-y-3 animate-in fade-in duration-200">
             <div className="flex items-center gap-2.5 text-[#059669]">
               <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <h4 className="font-bold text-sm text-[#065F46]">Reset Link Dispatched</h4>
+              <h4 className="font-bold text-sm text-[#065F46]">Check your email</h4>
             </div>
             <p className="text-xs text-[#065F46] leading-relaxed">
-              If an account is associated with <span className="font-semibold">{email}</span>, a secure password reset link has been dispatched. Please check your inbox and spam folders.
+              If an account is associated with <span className="font-semibold">{email}</span>, a six-digit verification code has been sent. Codes expire after 10 minutes. Check your inbox and spam folders.
             </p>
             <div className="pt-2 border-t border-[#A7F3D0]/50 flex justify-between items-center text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSubmitted(false);
-                  setEmail('');
-                }}
-                className="text-[#059669] hover:underline font-semibold"
-              >
-                Send another link
-              </button>
+              <Link to={`/reset-password?email=${encodeURIComponent(email.trim())}`} className="text-[#059669] hover:underline font-semibold">
+                Enter verification code
+              </Link>
               <Link to="/login" className="font-bold text-[#6D28D9] hover:underline">
                 Return to sign in →
               </Link>
@@ -148,11 +141,11 @@ export const ForgotPasswordPage: React.FC = () => {
                   {isLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Sending reset link...</span>
+                      <span>Sending verification code...</span>
                     </>
                   ) : (
                     <>
-                      <span>Send reset link</span>
+                      <span>Send verification code</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}

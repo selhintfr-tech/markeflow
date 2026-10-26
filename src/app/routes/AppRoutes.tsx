@@ -1,21 +1,7 @@
-﻿import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout } from '../../components/layout/AppLayout';
 import { ProtectedRoute } from '../../components/auth/ProtectedRoute';
-
-// Accessible loading fallback for lazy-loaded route components
-const RouteLoadingFallback: React.FC = () => (
-  <div
-    role="status"
-    aria-live="polite"
-    aria-label="Loading page content"
-    className="flex flex-col items-center justify-center min-h-[400px] w-full p-8"
-  >
-    <div className="w-10 h-10 border-4 border-[#EDE9FE] border-t-[#6D28D9] rounded-full animate-spin" />
-    <span className="sr-only">Loading page content, please wait...</span>
-    <p className="mt-3 text-xs font-medium text-[#64748B]">Loading...</p>
-  </div>
-);
 
 // Lazy-loaded route components
 const DashboardPage = lazy(() =>
@@ -103,67 +89,100 @@ const ResetPasswordPage = lazy(() =>
   import('../../features/auth/pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage }))
 );
 
+const AuthRouteFallback: React.FC = () => (
+  <div role="status" aria-label="Loading authentication" className="min-h-screen bg-[#F8F7FC] p-8">
+    <div className="mx-auto mt-24 h-8 w-48 animate-pulse rounded bg-slate-200" />
+    <span className="sr-only">Loading authentication.</span>
+  </div>
+);
+
 export const AppRoutes: React.FC = () => {
   return (
-    <Suspense fallback={<RouteLoadingFallback />}>
-      <Routes>
-        {/* Public Authentication Routes (Outside AppLayout) */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <Routes>
+      {/* Public Authentication Routes (Outside AppLayout) */}
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={<AuthRouteFallback />}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <Suspense fallback={<AuthRouteFallback />}>
+            <RegisterPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/forgot-password"
+        element={
+          <Suspense fallback={<AuthRouteFallback />}>
+            <ForgotPasswordPage />
+          </Suspense>
+        }
+      />
+      <Route
+        path="/reset-password"
+        element={
+          <Suspense fallback={<AuthRouteFallback />}>
+            <ResetPasswordPage />
+          </Suspense>
+        }
+      />
 
-        {/* Main Application Routes (Protected by Server-Validated Session) */}
-        <Route
-          element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }
-        >
-          {/* Primary Dashboard Route */}
-          <Route path="/" element={<DashboardPage />} />
+      {/* Main Application Routes (Protected by Server-Validated Session, Shell Never Unmounts) */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <AppLayout />
+          </ProtectedRoute>
+        }
+      >
+        {/* Primary Dashboard Route */}
+        <Route path="/" element={<DashboardPage />} />
 
-          {/* Management Routes */}
-          <Route path="/workspaces" element={<WorkspacesPage />} />
-          <Route path="/projects" element={<ProjectsListPage />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
-          <Route path="/strategies" element={<MarketingStrategiesPage />} />
-          <Route path="/strategies/:strategyId/swot" element={<SwotAnalysisPage />} />
-          <Route path="/strategies/swot" element={<SwotAnalysisPage />} />
-          <Route path="/market-research" element={<MarketResearchPage />} />
-          <Route path="/audiences" element={<AudiencesPage />} />
-          <Route path="/campaigns" element={<CampaignsListPage />} />
-          <Route path="/campaigns/:campaignId" element={<CampaignDetailsPage />} />
-          <Route path="/calendar" element={<ContentCalendarPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
+        {/* Management Routes */}
+        <Route path="/workspaces" element={<WorkspacesPage />} />
+        <Route path="/projects" element={<ProjectsListPage />} />
+        <Route path="/projects/:projectId" element={<ProjectDetailsPage />} />
+        <Route path="/strategies" element={<MarketingStrategiesPage />} />
+        <Route path="/strategies/:strategyId/swot" element={<SwotAnalysisPage />} />
+        <Route path="/strategies/swot" element={<SwotAnalysisPage />} />
+        <Route path="/market-research" element={<MarketResearchPage />} />
+        <Route path="/audiences" element={<AudiencesPage />} />
+        <Route path="/campaigns" element={<CampaignsListPage />} />
+        <Route path="/campaigns/:campaignId" element={<CampaignDetailsPage />} />
+        <Route path="/calendar" element={<ContentCalendarPage />} />
+        <Route path="/tasks" element={<TasksPage />} />
 
-          {/* Customer Routes */}
-          <Route path="/crm" element={<CrmLeadsPage />} />
-          <Route path="/crm-leads" element={<CrmLeadsPage />} />
-          <Route path="/sales/orders" element={<SalesOrdersPage />} />
+        {/* Customer Routes */}
+        <Route path="/crm" element={<CrmLeadsPage />} />
+        <Route path="/crm-leads" element={<CrmLeadsPage />} />
+        <Route path="/sales/orders" element={<SalesOrdersPage />} />
 
-          {/* Finance & Insights Routes */}
-          <Route path="/finance/budget" element={<BudgetExpensesPage />} />
-          <Route path="/budget-expenses" element={<BudgetExpensesPage />} />
-          <Route path="/finance/profitability" element={<ProfitabilityPage />} />
-          <Route path="/profitability" element={<ProfitabilityPage />} />
-          <Route path="/analytics" element={<AnalyticsPage />} />
-          <Route path="/reports" element={<ReportsPage />} />
-          <Route path="/comparisons" element={<ComparisonsPage />} />
+        {/* Finance & Insights Routes */}
+        <Route path="/finance/budget" element={<BudgetExpensesPage />} />
+        <Route path="/budget-expenses" element={<BudgetExpensesPage />} />
+        <Route path="/finance/profitability" element={<ProfitabilityPage />} />
+        <Route path="/profitability" element={<ProfitabilityPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/comparisons" element={<ComparisonsPage />} />
 
-          {/* System Routes */}
-          <Route path="/archive" element={<ArchivePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/integrations/meta" element={<MetaAdsIntegrationPage />} />
-          <Route path="/integrations/delivery" element={<DeliveryIntegrationsPage />} />
-          <Route path="/settings/profile" element={<MyProfilePage />} />
-          <Route path="/profile" element={<MyProfilePage />} />
+        {/* System Routes */}
+        <Route path="/archive" element={<ArchivePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/integrations/meta" element={<MetaAdsIntegrationPage />} />
+        <Route path="/integrations/delivery" element={<DeliveryIntegrationsPage />} />
+        <Route path="/settings/profile" element={<MyProfilePage />} />
+        <Route path="/profile" element={<MyProfilePage />} />
 
-          {/* Catch-all redirect to Dashboard */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </Suspense>
+        {/* Catch-all redirect to Dashboard */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
   );
 };

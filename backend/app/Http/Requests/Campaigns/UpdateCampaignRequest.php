@@ -27,7 +27,7 @@ class UpdateCampaignRequest extends FormRequest
             'channel' => ['sometimes', 'required', 'string', 'max:100'],
             'objective' => ['sometimes', 'nullable', 'string', 'max:255'],
             'start_date' => ['sometimes', 'required', 'date'],
-            'end_date' => ['sometimes', 'required', 'date'],
+            'end_date' => ['sometimes', 'nullable', 'date'],
             'budget' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'spend' => ['sometimes', 'required', 'numeric', 'decimal:0,2', 'min:0', 'max:9999999999.99'],
             'leads' => ['sometimes', 'required', 'integer', 'min:0', 'max:4294967295'],
@@ -54,8 +54,8 @@ class UpdateCampaignRequest extends FormRequest
                     return;
                 }
 
-                $startDate = $this->input('start_date', $campaign->start_date->toDateString());
-                $endDate = $this->input('end_date', $campaign->end_date->toDateString());
+                $startDate = $this->has('start_date') ? $this->input('start_date') : $campaign->start_date?->toDateString();
+                $endDate = $this->has('end_date') ? $this->input('end_date') : $campaign->end_date?->toDateString();
 
                 if (
                     is_string($startDate)

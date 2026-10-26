@@ -12,6 +12,7 @@ use App\Models\Workspace;
 use App\Models\WorkspaceUser;
 use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -117,7 +118,6 @@ class MarketingIntelligenceApiTest extends TestCase
                 'starts_on' => '2026-10-01',
                 'ends_on' => '2026-12-31',
                 'status' => 'Planned',
-                'progress' => 10,
                 'action_plan' => [['title' => 'Launch landing page', 'due_date' => '2026-10-30']],
                 'project_id' => $project->id,
                 'campaign_id' => $campaign->id,
@@ -127,7 +127,8 @@ class MarketingIntelligenceApiTest extends TestCase
             ->assertJsonPath('data.workspace_id', $workspace->id)
             ->assertJsonPath('data.created_by', $owner->id)
             ->assertJsonPath('data.budget', '25000.50')
-            ->assertJsonPath('data.audience_ids.0', $audience->id);
+            ->assertJsonPath('data.audience_ids.0', $audience->id)
+            ->assertJsonPath('data.progress', null);
         $strategyId = $created->json('data.id');
 
         $this->getJson('/test-api/strategies?search=growth&status=Planned&project_id='.$project->id.'&audience_id='.$audience->id)
@@ -137,10 +138,9 @@ class MarketingIntelligenceApiTest extends TestCase
 
         $this->putJson('/test-api/strategies/'.$strategyId, [
             'name' => 'Q4 demand strategy',
-            'progress' => 45,
         ])->assertOk()
             ->assertJsonPath('data.name', 'Q4 demand strategy')
-            ->assertJsonPath('data.progress', 45);
+            ->assertJsonPath('data.progress', null);
         $this->patchJson('/test-api/strategies/'.$strategyId, ['ends_on' => '2026-09-30'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['ends_on']);
@@ -154,6 +154,50 @@ class MarketingIntelligenceApiTest extends TestCase
 
         $this->deleteJson('/test-api/strategies/'.$strategyId)->assertOk();
         $this->assertDatabaseMissing('marketing_strategies', ['id' => $strategyId]);
+    }
+
+    public function test_strategy_progress_is_derived_only_from_persisted_initiative_statuses(): void
+    {
+        $owner = $this->createUser('strategy-progress@example.test');
+        $workspace = $this->createWorkspace($owner);
+
+        $legacy = $this->createStrategy($workspace, $owner);
+        app(TenantContext::class)->runInContext($workspace, fn () => $legacy->update(['progress' => 50]));
+        $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->getJson('/test-api/strategies/'.$legacy->id)
+            ->assertOk()
+            ->assertJsonPath('data.progress', null);
+        $this->assertDatabaseHas('marketing_strategies', ['id' => $legacy->id, 'progress' => 50]);
+
+        $create = fn (string $name, ?array $actionPlan) => $this->actingAs($owner)
+            ->withHeader('X-Workspace-Id', $workspace->id)
+            ->postJson('/test-api/strategies/', array_filter([
+                'name' => $name,
+                'action_plan' => $actionPlan,
+            ], fn ($value) => $value !== null))
+            ->assertCreated();
+
+        $create('No completion records', null)->assertJsonPath('data.progress', null);
+        $create('Untracked initiative', [['title' => 'No status']])->assertJsonPath('data.progress', null);
+        $zero = $create('No initiatives completed', [
+            ['title' => 'Pending', 'status' => 'Pending'],
+            ['title' => 'In progress', 'status' => 'In Progress'],
+        ]);
+        $zero->assertJsonPath('data.progress', 0);
+        $create('Partially complete', [
+            ['title' => 'Completed', 'status' => 'Completed'],
+            ['title' => 'Pending', 'status' => 'Pending'],
+        ])->assertJsonPath('data.progress', 50);
+        $create('Fully complete', [
+            ['title' => 'Completed one', 'status' => 'Completed'],
+            ['title' => 'Completed two', 'status' => 'Completed'],
+        ])->assertJsonPath('data.progress', 100);
+
+        $this->postJson('/test-api/strategies/', [
+            'name' => 'Client-supplied percentage',
+            'progress' => 50,
+        ])->assertUnprocessable()->assertJsonValidationErrors(['progress']);
     }
 
     public function test_research_crud_filters_and_persists_competitor_findings_swot_and_sources(): void
@@ -172,23 +216,70 @@ class MarketingIntelligenceApiTest extends TestCase
                 'competitor_profiles' => [[
                     'name' => 'Northwind Apparel',
                     'website' => 'https://northwind.example',
+                    'positioning' => 'Everyday sustainable basics',
+                    'price_level' => 'Medium',
+                    'price' => 79.50,
+                    'currency' => 'MAD',
+                    'main_offer' => 'Organic cotton essentials',
+                    'region' => 'Morocco',
+                    'city' => 'Casablanca',
+                    'reviewed_on' => '2026-10-10',
+                    'evidence' => 'https://northwind.example/about',
                     'strengths' => ['Strong brand'],
                     'weaknesses' => ['Limited sizing'],
                 ]],
-                'opportunities' => [['title' => 'Demand growth', 'description' => 'Category growth']],
+                'opportunities' => [[
+                    'id' => 'opportunity-demand',
+                    'title' => 'Demand growth',
+                    'description' => 'Category growth',
+                    'region' => 'Morocco',
+                    'confidence' => 'Medium',
+                    'recorded_on' => '2026-10-10',
+                ]],
                 'threats' => [['title' => 'Price pressure']],
-                'findings' => [['title' => 'Buyer preference', 'insight' => 'Buyers prefer verified sourcing.']],
+                'findings' => [[
+                    'title' => '',
+                    'insight' => 'Buyers prefer verified sourcing.',
+                    'status' => 'New',
+                ]],
                 'swot' => [['category' => 'strength', 'item' => 'Direct customer relationships']],
-                'sources' => [['title' => 'Industry report', 'url' => 'https://example.test/report', 'accessed_on' => '2026-10-10']],
-                'notes' => 'Review quarterly.',
+                'sources' => [[
+                    'id' => 'source-industry-report',
+                    'title' => 'Industry report',
+                    'url' => 'https://example.test/report',
+                    'accessed_on' => '2026-10-10',
+                    'type' => 'Report',
+                    'notes' => 'Published by the trade association.',
+                    'reliability' => 'High',
+                ]],
+                'notes' => json_encode([
+                    'legacyNotes' => 'Review quarterly.',
+                    'customerNeeds' => [['id' => 'need-1', 'need' => 'Durable fabrics', 'evidence' => 'Interview notes']],
+                    'pricingObservations' => [['id' => 'price-1', 'competitor' => 'Northwind Apparel', 'product' => 'T-shirt', 'price' => '79.50', 'currency' => 'MAD']],
+                    'observations' => [['id' => 'observation-1', 'observation' => 'More local sizing options', 'region' => 'Casablanca']],
+                    'marketflowResearchSectionsVersion' => 1,
+                ]),
             ])
             ->assertCreated()
             ->assertJsonPath('data.workspace_id', $workspace->id)
             ->assertJsonPath('data.created_by', $owner->id)
             ->assertJsonPath('data.competitor_profiles.0.name', 'Northwind Apparel')
+            ->assertJsonPath('data.competitor_profiles.0.price', 79.5)
+            ->assertJsonPath('data.competitor_profiles.0.currency', 'MAD')
+            ->assertJsonPath('data.competitor_profiles.0.city', 'Casablanca')
+            ->assertJsonPath('data.opportunities.0.confidence', 'Medium')
+            ->assertJsonPath('data.findings.0.title', null)
+            ->assertJsonPath('data.findings.0.insight', 'Buyers prefer verified sourcing.')
+            ->assertJsonPath('data.findings.0.status', 'New')
             ->assertJsonPath('data.swot.0.category', 'strength')
-            ->assertJsonPath('data.sources.0.url', 'https://example.test/report');
+            ->assertJsonPath('data.sources.0.url', 'https://example.test/report')
+            ->assertJsonPath('data.sources.0.type', 'Report')
+            ->assertJsonPath('data.sources.0.reliability', 'High');
         $researchId = $created->json('data.id');
+        $this->assertSame(
+            [['title' => null, 'insight' => 'Buyers prefer verified sourcing.', 'status' => 'New']],
+            json_decode(DB::table('market_research_projects')->where('id', $researchId)->value('findings'), true),
+        );
 
         $this->getJson('/test-api/research?search=apparel&category=Competitor%20analysis&status=In%20Progress&from=2026-10-15&to=2026-12-01')
             ->assertOk()
@@ -197,14 +288,71 @@ class MarketingIntelligenceApiTest extends TestCase
 
         $this->patchJson('/test-api/research/'.$researchId, [
             'status' => 'Completed',
-            'findings' => [['title' => 'Validated insight', 'insight' => 'Research confirms demand.']],
+            'findings' => [[
+                'title' => '',
+                'insight' => 'Updated research confirms demand.',
+                'status' => 'Reviewed',
+            ]],
         ])->assertOk()
             ->assertJsonPath('data.status', 'Completed')
-            ->assertJsonPath('data.findings.0.title', 'Validated insight');
+            ->assertJsonPath('data.findings.0.title', null)
+            ->assertJsonPath('data.findings.0.insight', 'Updated research confirms demand.')
+            ->assertJsonPath('data.findings.0.status', 'Reviewed');
+        $this->patchJson('/test-api/research/'.$researchId, [
+            'competitor_profiles' => [[
+                'id' => 'competitor-northwind',
+                'name' => 'Northwind Apparel',
+                'positioning' => 'Updated sustainable basics',
+                'price' => 84,
+                'currency' => 'MAD',
+            ]],
+        ])->assertOk()
+            ->assertJsonPath('data.competitor_profiles.0.positioning', 'Updated sustainable basics')
+            ->assertJsonPath('data.competitor_profiles.0.price', 84);
+        $this->assertSame(
+            'Updated sustainable basics',
+            json_decode(DB::table('market_research_projects')->where('id', $researchId)->value('competitor_profiles'), true)[0]['positioning'],
+        );
+        $notes = json_decode(DB::table('market_research_projects')->where('id', $researchId)->value('notes'), true);
+        $notes['customerNeeds'][0]['need'] = 'Updated durable fabrics';
+        $this->patchJson('/test-api/research/'.$researchId, ['notes' => json_encode($notes)])
+            ->assertOk()
+            ->assertJsonPath('data.notes', json_encode($notes));
+        $this->patchJson('/test-api/research/'.$researchId, [
+            'findings' => [[
+                'title' => null,
+                'insight' => 'Invalid status should not be persisted.',
+                'status' => 'Invalid',
+            ]],
+        ])->assertUnprocessable()->assertJsonValidationErrors(['findings.0.status']);
+        $this->getJson('/test-api/research/'.$researchId)
+            ->assertOk()
+            ->assertJsonPath('data.findings.0.insight', 'Updated research confirms demand.')
+            ->assertJsonPath('data.findings.0.status', 'Reviewed')
+            ->assertJsonPath('data.competitor_profiles.0.positioning', 'Updated sustainable basics')
+            ->assertJsonPath('data.sources.0.notes', 'Published by the trade association.')
+            ->assertJsonPath('data.notes', json_encode($notes));
+        $this->assertSame(
+            [['title' => null, 'insight' => 'Updated research confirms demand.', 'status' => 'Reviewed']],
+            json_decode(DB::table('market_research_projects')->where('id', $researchId)->value('findings'), true),
+        );
         $this->patchJson('/test-api/research/'.$researchId, ['ends_on' => '2026-09-30'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['ends_on']);
 
+        $this->patchJson('/test-api/research/'.$researchId, ['competitor_profiles' => []])
+            ->assertOk()
+            ->assertJsonPath('data.competitor_profiles', []);
+        $this->getJson('/test-api/research/'.$researchId)
+            ->assertOk()
+            ->assertJsonPath('data.competitor_profiles', []);
+        $this->patchJson('/test-api/research/'.$researchId, ['notes' => json_encode([
+            'legacyNotes' => 'Review quarterly.',
+            'customerNeeds' => [],
+            'pricingObservations' => [],
+            'observations' => [],
+            'marketflowResearchSectionsVersion' => 1,
+        ])])->assertOk();
         $this->deleteJson('/test-api/research/'.$researchId)->assertOk();
         $this->assertDatabaseMissing('market_research_projects', ['id' => $researchId]);
     }

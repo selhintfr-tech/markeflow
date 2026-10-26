@@ -28,9 +28,14 @@ class ReportGenerationService
             'timeseries' => $this->analytics->timeSeries($workspaceId, $from, $to),
             'campaigns' => $this->campaignRows($workspaceId, $from, $to, $report->filters ?? []),
             'tasks' => $this->groupedRows('tasks', $workspaceId, 'status', 'due_date', $from, $to, $report->filters ?? []),
-            'crm' => $this->groupedRows('crm_leads', $workspaceId, 'status', 'created_at', $from, $to, $report->filters ?? []),
+            'crm' => $this->analytics->overview($workspaceId, $from, $to)['crm'],
             'finance' => $this->financeRows($workspaceId, $from, $to, $report->filters ?? []),
+            'projects' => $this->projectRows($workspaceId, $from, $to, $report->filters ?? []),
         };
+        $metrics = $report->configuration['metrics'] ?? [];
+        if (is_array($metrics) && $metrics !== []) {
+            $data = $this->selectMetrics($report->type, $data, $metrics);
+        }
 
         return [
             'report' => ['id' => $report->id, 'name' => $report->name, 'type' => $report->type],
@@ -45,17 +50,25 @@ class ReportGenerationService
      */
     private function campaignRows(string $workspaceId, ?string $from, ?string $to, array $filters): ?array
     {
-        if (! $this->supports('campaigns', 'workspace_id', 'id', 'name', 'status', 'start_date', 'end_date', 'budget', 'spend', 'leads', 'customers', 'revenue')) {
+        if (! $this->supports('campaigns', 'workspace_id', 'id', 'name', 'status', 'platform', 'start_date', 'end_date', 'budget', 'spend', 'leads', 'customers', 'revenue')) {
             return null;
         }
 
         $query = DB::table('campaigns')->where('workspace_id', $workspaceId);
-        $this->dateRange($query, 'start_date', $from, $to);
-        $query->when($filters['status'] ?? null, fn ($builder, string $status) => $builder->where('status', $status))
+        if ($from !== null) {
+            $query->where(function (Builder $q) use ($from): void {
+                $q->whereNull('end_date')->orWhereDate('end_date', '>=', $from);
+            });
+        }
+        if ($to !== null) {
+            $query->whereDate('start_date', '<=', $to);
+        }
+        $query->when($filters['campaign_id'] ?? null, fn ($builder, string $campaignId) => $builder->where('id', $campaignId))
+            ->when($filters['status'] ?? null, fn ($builder, string $status) => $builder->where('status', $status))
             ->when($filters['project_id'] ?? null, fn ($builder, string $projectId) => $builder->where('project_id', $projectId));
 
         return $query->orderBy('start_date')->get([
-            'id', 'name', 'status', 'start_date', 'end_date', 'budget', 'spend', 'leads', 'customers', 'revenue',
+            'id', 'name', 'status', 'platform', 'start_date', 'end_date', 'budget', 'spend', 'leads', 'customers', 'revenue',
         ])->map(fn (object $campaign): array => (array) $campaign)->all();
     }
 
@@ -104,6 +117,25 @@ class ReportGenerationService
             ])->all();
     }
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function projectRows(string $workspaceId, ?string $from, ?string $to, array $filters): ?array
+    {
+        if (! $this->supports('projects', 'workspace_id', 'id', 'name', 'status', 'start_date', 'end_date', 'progress')) {
+            return null;
+        }
+
+        $query = DB::table('projects')->where('workspace_id', $workspaceId);
+        $this->dateRange($query, 'start_date', $from, $to);
+        $query->when($filters['project_id'] ?? null, fn ($builder, string $projectId) => $builder->where('id', $projectId))
+            ->when($filters['status'] ?? null, fn ($builder, string $status) => $builder->where('status', $status));
+
+        return $query->orderBy('start_date')->get([
+            'id', 'name', 'status', 'start_date', 'end_date', 'progress',
+        ])->map(fn (object $project): array => (array) $project)->all();
+    }
+
     private function dateRange(Builder $query, string $column, ?string $from, ?string $to): void
     {
         if ($from !== null) {
@@ -114,18 +146,91 @@ class ReportGenerationService
         }
     }
 
+    /**
+     * Known tables and columns defined in repository migrations.
+     * Pre-populated to avoid all pg_catalog introspection roundtrips.
+     *
+     * @var array<string, array<string, int>>
+     */
+    private static array $knownTableColumns = [
+        'campaigns' => ['id' => 1, 'workspace_id' => 1, 'project_id' => 1, 'name' => 1, 'status' => 1, 'platform' => 1, 'start_date' => 1, 'end_date' => 1, 'budget' => 1, 'spend' => 1, 'leads' => 1, 'customers' => 1, 'revenue' => 1],
+        'projects' => ['id' => 1, 'workspace_id' => 1, 'name' => 1, 'status' => 1, 'start_date' => 1, 'end_date' => 1, 'progress' => 1],
+        'tasks' => ['id' => 1, 'workspace_id' => 1, 'project_id' => 1, 'campaign_id' => 1, 'status' => 1, 'due_date' => 1],
+        'finance_transactions' => ['id' => 1, 'workspace_id' => 1, 'occurred_on' => 1, 'type' => 1, 'category' => 1, 'amount' => 1],
+    ];
+
+    /**
+     * In-memory cache for dynamic table columns.
+     *
+     * @var array<string, array<string, int>|null>
+     */
+    private static array $tableColumnsCache = [];
+
+    public static function clearSchemaCache(): void
+    {
+        self::$tableColumnsCache = [];
+    }
+
     private function supports(string $table, string ...$columns): bool
     {
-        if (! Schema::hasTable($table)) {
+        if (isset(self::$knownTableColumns[$table])) {
+            $tableCols = self::$knownTableColumns[$table];
+            foreach ($columns as $column) {
+                if (! isset($tableCols[$column])) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        if (! array_key_exists($table, self::$tableColumnsCache)) {
+            if (! Schema::hasTable($table)) {
+                self::$tableColumnsCache[$table] = null;
+            } else {
+                self::$tableColumnsCache[$table] = array_flip(Schema::getColumnListing($table));
+            }
+        }
+
+        $tableCols = self::$tableColumnsCache[$table];
+        if ($tableCols === null) {
             return false;
         }
 
         foreach ($columns as $column) {
-            if (! Schema::hasColumn($table, $column)) {
+            if (! isset($tableCols[$column])) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * @param  array<mixed>  $metrics
+     * @return array<mixed>|null
+     */
+    private function selectMetrics(string $type, ?array $data, array $metrics): ?array
+    {
+        if ($data === null) {
+            return null;
+        }
+        $selected = array_fill_keys(array_filter($metrics, 'is_string'), true);
+
+        if ($type === 'timeseries' && isset($data['series']) && is_array($data['series'])) {
+            $data['series'] = array_intersect_key($data['series'], $selected);
+
+            return $data;
+        }
+        if (array_is_list($data)) {
+            $dimensions = ['id', 'name', 'status', 'type', 'category', 'date', 'start_date', 'end_date', 'platform'];
+
+            return array_map(
+                fn (array $row): array => array_intersect_key($row, $selected + array_fill_keys($dimensions, true)),
+                $data
+            );
+        }
+
+        return array_intersect_key($data, $selected);
     }
 }

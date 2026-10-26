@@ -11,9 +11,10 @@ Route::middleware(['web', 'auth', 'tenant', 'tenant.required'])
         Route::post('/connect', [MetaIntegrationController::class, 'connect'])->name('connect');
         Route::get('/accounts', [MetaIntegrationController::class, 'accounts'])->name('accounts');
         Route::get('/insights', [MetaIntegrationController::class, 'insights'])->name('insights');
+        Route::get('/historical-studies', [MetaIntegrationController::class, 'historicalStudies'])->name('historical-studies');
+        Route::put('/preferred-account', [MetaIntegrationController::class, 'preferredAccount'])->name('preferred-account');
         Route::delete('/connection', [MetaIntegrationController::class, 'disconnect'])->name('disconnect');
     });
 
-Route::middleware(['web', 'auth'])
-    ->get('/integrations/meta/callback', [MetaIntegrationController::class, 'callback'])
+Route::get('/integrations/meta/callback', [MetaIntegrationController::class, 'callback'])
     ->name('integrations.meta.callback');

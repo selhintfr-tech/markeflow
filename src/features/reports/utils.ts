@@ -1,5 +1,6 @@
 import type { Report, ReportFilterState } from './types';
-import { REPORTS_STORAGE_KEY } from './data';
+
+export const REPORTS_STORAGE_KEY = 'marketflow_reports';
 
 export const loadReportsFromStorage = (): Report[] => {
   try {

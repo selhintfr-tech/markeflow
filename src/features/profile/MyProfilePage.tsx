@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { UserProfile } from '../../types';
 import { ApiError } from '../api/apiClient';
+import { useAuth } from '../../context/AuthContext';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { ProfileSummaryCard } from './components/ProfileSummaryCard';
 import { PersonalInformationForm } from './components/PersonalInformationForm';
@@ -11,12 +12,14 @@ import { profileService } from './profileService';
 
 export const MyProfilePage: React.FC = () => {
   const { currentWorkspace } = useWorkspace();
+  const { updateAvatar } = useAuth();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [isAvatarSaving, setIsAvatarSaving] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -56,7 +59,6 @@ export const MyProfilePage: React.FC = () => {
         role: savedProfile.role || current?.role,
         workspaceName: currentWorkspace.name || undefined,
       }));
-      setAvatarPreview(null);
       setShowSuccessAlert(true);
       setToastMessage('Profile changes saved successfully.');
     } catch (error) {
@@ -65,6 +67,36 @@ export const MyProfilePage: React.FC = () => {
         : error instanceof Error ? error.message : 'Unable to save profile changes.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleAvatarUpload = async (file: File) => {
+    setIsAvatarSaving(true);
+    setAvatarError(null);
+    try {
+      const updatedProfile = await profileService.uploadAvatar(file);
+      setUser((current) => current ? { ...current, avatarUrl: updatedProfile.avatarUrl } : current);
+      updateAvatar(updatedProfile.avatarUrl || null);
+      setToastMessage('Profile photo updated successfully.');
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'Unable to upload your profile photo.');
+    } finally {
+      setIsAvatarSaving(false);
+    }
+  };
+
+  const handleAvatarRemove = async () => {
+    setIsAvatarSaving(true);
+    setAvatarError(null);
+    try {
+      const updatedProfile = await profileService.deleteAvatar();
+      setUser((current) => current ? { ...current, avatarUrl: updatedProfile.avatarUrl } : current);
+      updateAvatar(null);
+      setToastMessage('Profile photo removed.');
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'Unable to remove your profile photo.');
+    } finally {
+      setIsAvatarSaving(false);
     }
   };
 
@@ -90,6 +122,12 @@ export const MyProfilePage: React.FC = () => {
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{saveError}</span>
+        </div>
+      )}
+      {avatarError && (
+        <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{avatarError}</span>
         </div>
       )}
 
@@ -128,7 +166,6 @@ export const MyProfilePage: React.FC = () => {
           {/* Card 1: Profile Summary Card */}
           <ProfileSummaryCard
             user={displayUser}
-            avatarPreview={avatarPreview}
             showSuccessAlert={showSuccessAlert}
             onDismissAlert={() => setShowSuccessAlert(false)}
           />
@@ -137,10 +174,11 @@ export const MyProfilePage: React.FC = () => {
           <PersonalInformationForm
             key={displayUser.name + displayUser.email + (displayUser.phone || '')}
             initialUser={displayUser}
-            avatarPreview={avatarPreview}
-            onAvatarChange={setAvatarPreview}
             onSave={handleSaveProfile}
             isSaving={isSaving}
+            onAvatarUpload={handleAvatarUpload}
+            onAvatarRemove={handleAvatarRemove}
+            isAvatarSaving={isAvatarSaving}
           />
         </div>
 
